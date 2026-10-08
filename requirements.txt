@@ -1,0 +1,12 @@
+yt-dlp>=2024.8.6
+faster-whisper>=1.0.3
+av<14,>=11
+ollama>=0.3.3
+opencv-python-headless>=4.10.0
+numpy>=1.26.4
+rich>=13.7.1
+tqdm>=4.66.5
+pydantic>=2.8.2
+requests>=2.32.3
+pillow>=11.0.0
+questionary>=2.1.0
