@@ -13,6 +13,7 @@ from rich.table import Table
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TaskProgressColumn, TimeElapsedColumn
 
 from src.pipeline import ShortsPipeline
+from src.templates import TEMPLATES, get_template, ShortsTemplate
 
 console = Console()
 
@@ -115,86 +116,116 @@ def interactive_wizard():
         custom_c = questionary.text("원하는 개수를 숫자로 입력하세요:", default="1").ask()
         clips_count = int(custom_c) if custom_c and custom_c.isdigit() else 1
 
-    # Step 3: 옵션 선택
-    opt_mode = questionary.select(
-        "스텝 3/4. 숏폼 스타일 및 효과 옵션을 선택하세요:",
+    # Step 3: 디자인 템플릿 선택 (미리캔버스 / 캔바 / 알파컷 스타일)
+    tpl_choice = questionary.select(
+        "스텝 3/4. 적용할 쇼츠 디자인 템플릿을 선택하세요 (미리캔버스·캔바·알파컷 기반):",
         choices=[
-            "⚡ [빠른 추천] 기본 최적 옵션 (블러 배경 + 훅 뱃지 + 프로그레스 바 + 30~50초)",
-            "🎨 [맞춤 설정] 화면 레이아웃, 길이, 효과 직접 변경"
+            "💻 1) [정보·리뷰·테크] 인터넷창 / macOS 브라우저 창 썸네일형 (트래픽라이트 🔴🟡🟢 + 3D 폰트 + 해시태그)",
+            "🚨 2) [뉴스·속보·이슈] 미리캔버스 뉴스 포털 & 긴급 속보형 (Clean 화이트 + 방송 레드 헤더 + 형광펜 헤드라인)",
+            "✨ 3) [매거진·인포·네온] 캔바 & 알파컷 인포 매거진 템플릿 (다크 슬레이트 + 네온 사이언 보더 + 요약 카드)",
+            "💡 4) [교육·강의·미니멀] 캔바 모던 클린 템플릿 (모던 슬레이트 + 프리텐다드 서체 자막)",
+            "👤 5) [인터뷰·토크] 9:16 인물 추적 풀스크린 (호르모지 스타일)",
+            "🎞 6) [순정 원본 보존] 자체 자막 유지 템플릿 (영상 원본 100% 보존, 추가 자막 없음)",
+            "🎨 7) [세부 맞춤 설정] 레이아웃, 자막 스타일 직접 세부 설정"
         ]
     ).ask()
 
-    if not opt_mode:
+    if not tpl_choice:
         sys.exit(0)
 
-    layout_mode = "blur_background"
-    show_badge = True
-    show_progress_bar = True
-    target_dur = (30, 50)
+    template = get_template("browser_window")
 
-    if "맞춤 설정" in opt_mode:
-        # 3-1. 화면 레이아웃 모드
+    if "뉴스" in tpl_choice or "속보" in tpl_choice:
+        template = get_template("news_portal")
+    elif "매거진" in tpl_choice or "네온" in tpl_choice:
+        template = get_template("neon_magazine")
+    elif "인터넷창" in tpl_choice or "브라우저" in tpl_choice:
+        template = get_template("browser_window")
+    elif "인터뷰" in tpl_choice:
+        template = get_template("interview_talk")
+    elif "교육" in tpl_choice:
+        template = get_template("minimal_edu")
+    elif "순정" in tpl_choice:
+        template = get_template("source_pure")
+    elif "맞춤 설정" in tpl_choice:
+        # Custom fine-tuning
         layout_choice = questionary.select(
-            "👉 9:16 세로 화면 연출 모드를 선택하세요:",
-            choices=[
-                "🌟 1) 블러 배경 모드 (추천: 상하단 은은한 블러 + 중앙 원본 유지)",
-                "👤 2) 스마트 얼굴 추적 (AI가 화자 얼굴을 따라 9:16 중앙 패닝)",
-                "🎯 3) 단순 중앙 크롭 (가운데 9:16 영역만 잘라내기)"
-            ]
+            "👉 레이아웃 선택:",
+            choices=["인터넷창 / 맥OS 브라우저형", "뉴스 포털 & 긴급 속보형", "스마트 인물 크롭 (9:16)", "블러 배경"]
         ).ask()
-        if "블러" in layout_choice:
-            layout_mode = "blur_background"
-        elif "스마트" in layout_choice:
-            layout_mode = "smart_crop"
-        else:
-            layout_mode = "center_crop"
+        layout_mode = "browser_window" if "브라우저" in layout_choice else ("news_portal" if "뉴스" in layout_choice else ("smart_crop" if "스마트" in layout_choice else "blur_background"))
 
-        # 3-2. 쇼츠 길이
-        dur_choice = questionary.select(
-            "👉 쇼츠 목표 길이를 선택하세요:",
-            choices=[
-                "⏱ 1) 30초 ~ 50초 (유튜브 쇼츠 표준 추천)",
-                "⚡ 2) 20초 ~ 35초 (짧고 빠른 템포)",
-                "📖 3) 45초 ~ 60초 (풍부한 스토리 완결형)"
-            ]
+        sub_choice = questionary.select(
+            "👉 자막 스타일:",
+            choices=["호르모지 키네틱 자막", "클린 화이트 자막", "자막 없음"]
         ).ask()
-        if "20초" in dur_choice:
-            target_dur = (20, 35)
-        elif "45초" in dur_choice:
-            target_dur = (45, 60)
-        else:
-            target_dur = (30, 50)
+        sub_style = "viral_pop" if "호르모지" in sub_choice else ("clean_minimal" if "화이트" in sub_choice else "none")
 
-        # 3-3. 효과 여부
-        show_badge = questionary.confirm("👉 상단 훅(Hook) 타이틀 뱃지를 넣으시겠습니까?", default=True).ask()
-        show_progress_bar = questionary.confirm("👉 하단 다이내믹 프로그레스 바를 넣으시겠습니까?", default=True).ask()
+        show_badge = questionary.confirm("👉 상단 3초 인트로 훅 뱃지 노출 여부:", default=True).ask()
 
-    console.print("\n[bold green]✔ 모든 설정이 완료되었습니다! 쇼츠 생성을 시작합니다.[/bold green]\n")
+        template = ShortsTemplate(
+            id="custom",
+            name="사용자 지정 커스텀",
+            category="커스텀",
+            description="사용자가 직접 구성한 스타일",
+            layout_type=layout_mode,
+            badge_style="gold_pill" if show_badge else "none",
+            badge_prefix="🔥",
+            subtitle_style=sub_style,
+            active_color=(255, 230, 0),
+            normal_color=(255, 255, 255),
+            marker_color=(0, 255, 180, 200),
+            font_name="black_han_sans",
+            video_box=(70, 435, 940, 528),
+            subtitle_y=1120
+        )
 
-    # Step 4: 생성 > 진행 과정 안내 문구 및 진행 퍼센트 게이지 노출
+    # 쇼츠 목표 길이
+    dur_choice = questionary.select(
+        "👉 쇼츠 목표 길이를 선택하세요:",
+        choices=[
+            "⏱ 1) 30초 ~ 50초 (유튜브 쇼츠 표준 추천)",
+            "⚡ 2) 20초 ~ 35초 (짧고 빠른 템포)",
+            "📖 3) 45초 ~ 60초 (풍부한 스토리 완결형)"
+        ]
+    ).ask()
+    if "20초" in dur_choice:
+        target_dur = (20, 35)
+    elif "45초" in dur_choice:
+        target_dur = (45, 60)
+    else:
+        target_dur = (30, 50)
+
+    console.print(f"\n[bold green]✔ [{template.name}] 템플릿이 적용되었습니다! 쇼츠 생성을 시작합니다.[/bold green]\n")
+
+    # Step 4: 실행
     run_with_progress(
         source=source,
         clips_count=clips_count,
-        layout_mode=layout_mode,
-        show_badge=show_badge,
-        show_progress_bar=show_progress_bar,
+        template=template,
         target_dur=target_dur
     )
 
 def run_with_progress(
     source: str,
     clips_count: int,
-    layout_mode: str,
-    show_badge: bool,
-    show_progress_bar: bool,
+    template: ShortsTemplate,
     target_dur: tuple[int, int]
 ):
     pipeline = ShortsPipeline(
         whisper_model="small",
         llm_model="qwen2.5:7b",
-        layout_mode=layout_mode,
-        show_badge=show_badge,
-        show_progress_bar=show_progress_bar,
+        template=template,
+        layout_mode=template.layout_type,
+        show_badge=template.badge_style != "none",
+        badge_style=template.badge_style,
+        badge_prefix=template.badge_prefix,
+        show_subtitles=template.subtitle_style != "none",
+        subtitle_style=template.subtitle_style,
+        active_color=template.active_color,
+        normal_color=template.normal_color,
+        font_name=template.font_name,
+        show_progress_bar=False,
         normalize_audio=True
     )
 
@@ -243,7 +274,6 @@ def run_with_progress(
     console.print(table)
     console.print("\n[bold green]✨ 모든 작업이 성공적으로 끝났습니다![/bold green]\n")
 
-    # Ask to open in Finder
     try:
         open_finder = questionary.confirm("📂 생성된 쇼츠 폴더(output)를 Finder에서 여시겠습니까?", default=True).ask()
         if open_finder:
@@ -259,11 +289,13 @@ def parse_args():
     parser.add_argument("source", nargs="?", help="유튜브 URL 또는 파일 경로 (생략 시 대화형 마법사 실행)")
     parser.add_argument("-s", "--source-opt", dest="source_opt", help="소스 지정")
     parser.add_argument("-c", "--clips", type=int, default=1, help="생성할 쇼츠 개수")
-    parser.add_argument("-l", "--layout", choices=["blur_background", "smart_crop", "center_crop"], default="blur_background")
+    parser.add_argument("-t", "--template", choices=list(TEMPLATES.keys()), default="tech_review", help="디자인 템플릿")
+    parser.add_argument("-l", "--layout", choices=["studio_card", "smart_crop", "blur_background", "center_crop"], default=None, help="레이아웃 오버라이드")
     parser.add_argument("-w", "--whisper", default="small", choices=["base", "small", "medium", "large-v3-turbo"])
     parser.add_argument("-m", "--llm", default="qwen2.5:7b", help="Ollama 로컬 모델")
     parser.add_argument("--no-badge", action="store_true", help="상단 훅 뱃지 끄기")
-    parser.add_argument("--no-progress", action="store_true", help="하단 프로그레스 바 끄기")
+    parser.add_argument("--no-subtitles", action="store_true", help="자막(캡션) 생성 끄기")
+    parser.add_argument("--subtitle-style", choices=["viral_pop", "clean_minimal", "none"], default=None, help="자막 스타일 오버라이드")
     parser.add_argument("--min-dur", type=int, default=30)
     parser.add_argument("--max-dur", type=int, default=50)
 
@@ -273,7 +305,6 @@ def main():
     args = parse_args()
     source = args.source or args.source_opt
 
-    # If no arguments given, run the interactive wizard!
     if not source:
         try:
             interactive_wizard()
@@ -282,13 +313,26 @@ def main():
             sys.exit(0)
         return
 
-    # Otherwise run directly in CLI mode
+    tpl = get_template(args.template)
+    layout_mode = args.layout or tpl.layout_type
+    show_badge = not args.no_badge and tpl.badge_style != "none"
+    show_subtitles = not args.no_subtitles and (args.subtitle_style != "none" if args.subtitle_style else tpl.subtitle_style != "none")
+    sub_style = args.subtitle_style or tpl.subtitle_style
+
     pipeline = ShortsPipeline(
         whisper_model=args.whisper,
         llm_model=args.llm,
-        layout_mode=args.layout,
-        show_badge=not args.no_badge,
-        show_progress_bar=not args.no_progress,
+        template=tpl,
+        layout_mode=layout_mode,
+        show_badge=show_badge,
+        badge_style=tpl.badge_style,
+        badge_prefix=tpl.badge_prefix,
+        show_subtitles=show_subtitles,
+        subtitle_style=sub_style,
+        active_color=tpl.active_color,
+        normal_color=tpl.normal_color,
+        font_name=tpl.font_name,
+        show_progress_bar=False,
         normalize_audio=True
     )
 

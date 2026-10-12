@@ -27,6 +27,7 @@ class Highlight(BaseModel):
     end_time: float
     duration: float = 0.0
     reason: str = ""
+    summary_points: List[str] = Field(default_factory=list)
 
     def model_post_init(self, __context):
         if self.duration == 0.0:

@@ -6,6 +6,7 @@ from rich.console import Console
 from rich.table import Table
 
 from src.models import VideoMetadata, Transcript, Highlight
+from src.templates import ShortsTemplate, get_template
 from src.downloader import prepare_source
 from src.transcriber import transcribe_video
 from src.highlighter import detect_highlights
@@ -24,15 +25,32 @@ class ShortsPipeline:
         self,
         whisper_model: str = "small",
         llm_model: str = "qwen2.5:7b",
-        layout_mode: str = "blur_background",
+        template: Optional[ShortsTemplate] = None,
+        template_id: str = "browser_window",
+        layout_mode: Optional[str] = None,
         show_badge: bool = True,
-        show_progress_bar: bool = True,
+        badge_style: str = "gold_pill",
+        badge_prefix: str = "[TIP]",
+        show_subtitles: bool = True,
+        subtitle_style: Optional[str] = None,
+        active_color: tuple = (255, 230, 0),
+        normal_color: tuple = (255, 255, 255),
+        font_name: str = "black_han_sans",
+        show_progress_bar: bool = False,
         normalize_audio: bool = True
     ):
         self.whisper_model = whisper_model
         self.llm_model = llm_model
-        self.layout_mode = layout_mode
+        self.template = template if template else get_template(template_id)
+        self.layout_mode = layout_mode or self.template.layout_type
         self.show_badge = show_badge
+        self.badge_style = badge_style
+        self.badge_prefix = badge_prefix
+        self.show_subtitles = show_subtitles
+        self.subtitle_style = subtitle_style or self.template.subtitle_style
+        self.active_color = active_color
+        self.normal_color = normal_color
+        self.font_name = font_name
         self.show_progress_bar = show_progress_bar
         self.normalize_audio = normalize_audio
 
@@ -118,14 +136,22 @@ class ShortsPipeline:
                     highlight=h,
                     transcript=transcript,
                     output_path=output_path,
+                    template=self.template,
                     layout_mode=self.layout_mode,
                     show_badge=self.show_badge,
+                    badge_style=self.badge_style,
+                    badge_prefix=self.badge_prefix,
+                    show_subtitles=self.show_subtitles,
+                    subtitle_style=self.subtitle_style,
+                    active_color=self.active_color,
+                    normal_color=self.normal_color,
+                    font_name=self.font_name,
                     show_progress_bar=self.show_progress_bar,
                     normalize_audio=self.normalize_audio
                 )
             else:
                 console.print(f"\n[bold yellow]👉 [클립 #{h.id}] {h.title}[/bold yellow] ({time_str}, {h.duration:.1f}초)")
-                console.print(f"   • 훅 타이틀: [bold cyan]{h.hook_text}[/bold cyan]")
+                console.print(f"   • 훅 헤드라인: [bold cyan]{h.hook_text}[/bold cyan]")
                 console.print(f"   • 선정 이유: {h.reason}")
                 with console.status(f"[bold magenta]4/4. 9:16 비디오 + 팝업 자막 + 효과 렌더링 중...[/bold magenta]"):
                     render_short(
@@ -133,8 +159,16 @@ class ShortsPipeline:
                         highlight=h,
                         transcript=transcript,
                         output_path=output_path,
+                        template=self.template,
                         layout_mode=self.layout_mode,
                         show_badge=self.show_badge,
+                        badge_style=self.badge_style,
+                        badge_prefix=self.badge_prefix,
+                        show_subtitles=self.show_subtitles,
+                        subtitle_style=self.subtitle_style,
+                        active_color=self.active_color,
+                        normal_color=self.normal_color,
+                        font_name=self.font_name,
                         show_progress_bar=self.show_progress_bar,
                         normalize_audio=self.normalize_audio
                     )
