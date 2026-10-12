@@ -94,7 +94,7 @@ def interactive_wizard():
 
     # Step 2: 영상 몇 개 생성할 것인가
     clips_choice = questionary.select(
-        "스텝 2/4. 생성할 쇼츠(하이라이트) 개수를 선택하세요:",
+        "스텝 2/5. 생성할 쇼츠(하이라이트) 개수를 선택하세요:",
         choices=[
             "1개 (가장 추천하는 핵심 하이라이트)",
             "2개 (서로 다른 2개 구간 추출)",
@@ -118,7 +118,7 @@ def interactive_wizard():
 
     # Step 3: 디자인 템플릿 선택 (미리캔버스 / 캔바 / 알파컷 스타일)
     tpl_choice = questionary.select(
-        "스텝 3/4. 적용할 쇼츠 디자인 템플릿을 선택하세요 (미리캔버스·캔바·알파컷 기반):",
+        "스텝 3/5. 적용할 쇼츠 디자인 템플릿을 선택하세요 (미리캔버스·캔바·알파컷 기반):",
         choices=[
             "💻 1) [정보·리뷰·테크] 인터넷창 / macOS 브라우저 창 썸네일형 (트래픽라이트 🔴🟡🟢 + 3D 폰트 + 해시태그)",
             "🚨 2) [뉴스·속보·이슈] 미리캔버스 뉴스 포털 & 긴급 속보형 (Clean 화이트 + 방송 레드 헤더 + 형광펜 헤드라인)",
@@ -155,12 +155,6 @@ def interactive_wizard():
         ).ask()
         layout_mode = "browser_window" if "브라우저" in layout_choice else ("news_portal" if "뉴스" in layout_choice else ("smart_crop" if "스마트" in layout_choice else "blur_background"))
 
-        sub_choice = questionary.select(
-            "👉 자막 스타일:",
-            choices=["호르모지 키네틱 자막", "클린 화이트 자막", "자막 없음"]
-        ).ask()
-        sub_style = "viral_pop" if "호르모지" in sub_choice else ("clean_minimal" if "화이트" in sub_choice else "none")
-
         show_badge = questionary.confirm("👉 상단 3초 인트로 훅 뱃지 노출 여부:", default=True).ask()
 
         template = ShortsTemplate(
@@ -171,7 +165,7 @@ def interactive_wizard():
             layout_type=layout_mode,
             badge_style="gold_pill" if show_badge else "none",
             badge_prefix="🔥",
-            subtitle_style=sub_style,
+            subtitle_style="viral_pop",
             active_color=(255, 230, 0),
             normal_color=(255, 255, 255),
             marker_color=(0, 255, 180, 200),
@@ -180,9 +174,43 @@ def interactive_wizard():
             subtitle_y=1120
         )
 
-    # 쇼츠 목표 길이
+    # Step 4: 자막(캡션) 생성 여부 및 스타일 선택
+    default_sub_idx = 0
+    if template.subtitle_style == "none":
+        default_sub_idx = 2
+    elif template.subtitle_style == "clean_minimal":
+        default_sub_idx = 1
+
+    sub_choices = [
+        "🔥 1) 바이럴 키네틱 팝 자막 (단어별 형광펜 하이라이트 + 굵은 외곽선 / 추천)",
+        "💬 2) 클린 미니멀 자막 (깔끔하고 단정한 프리텐다드 서체 자막)",
+        "🚫 3) 자막 생성 안 함 (영상 원본 자체 자막 유지 또는 자막 없이 생성)"
+    ]
+
+    sub_choice = questionary.select(
+        "스텝 4/5. 자막(캡션) 생성 여부 및 스타일을 선택하세요:",
+        choices=sub_choices,
+        default=sub_choices[default_sub_idx]
+    ).ask()
+
+    if not sub_choice:
+        sys.exit(0)
+
+    if "바이럴" in sub_choice:
+        show_subtitles = True
+        sub_style = "viral_pop"
+    elif "클린" in sub_choice:
+        show_subtitles = True
+        sub_style = "clean_minimal"
+    else:
+        show_subtitles = False
+        sub_style = "none"
+
+    template.subtitle_style = sub_style
+
+    # Step 5: 쇼츠 목표 길이
     dur_choice = questionary.select(
-        "👉 쇼츠 목표 길이를 선택하세요:",
+        "스텝 5/5. 쇼츠 목표 길이를 선택하세요:",
         choices=[
             "⏱ 1) 30초 ~ 50초 (유튜브 쇼츠 표준 추천)",
             "⚡ 2) 20초 ~ 35초 (짧고 빠른 템포)",
@@ -196,21 +224,26 @@ def interactive_wizard():
     else:
         target_dur = (30, 50)
 
-    console.print(f"\n[bold green]✔ [{template.name}] 템플릿이 적용되었습니다! 쇼츠 생성을 시작합니다.[/bold green]\n")
+    sub_desc = "바이럴 키네틱 자막" if sub_style == "viral_pop" else ("클린 미니멀 자막" if sub_style == "clean_minimal" else "자막 생성 안 함")
+    console.print(f"\n[bold green]✔ [{template.name}] 템플릿 & [{sub_desc}] 설정 완료! 쇼츠 생성을 시작합니다.[/bold green]\n")
 
-    # Step 4: 실행
+    # 실행
     run_with_progress(
         source=source,
         clips_count=clips_count,
         template=template,
-        target_dur=target_dur
+        target_dur=target_dur,
+        show_subtitles=show_subtitles,
+        subtitle_style=sub_style
     )
 
 def run_with_progress(
     source: str,
     clips_count: int,
     template: ShortsTemplate,
-    target_dur: tuple[int, int]
+    target_dur: tuple[int, int],
+    show_subtitles: bool = True,
+    subtitle_style: str = "viral_pop"
 ):
     pipeline = ShortsPipeline(
         whisper_model="small",
@@ -220,8 +253,8 @@ def run_with_progress(
         show_badge=template.badge_style != "none",
         badge_style=template.badge_style,
         badge_prefix=template.badge_prefix,
-        show_subtitles=template.subtitle_style != "none",
-        subtitle_style=template.subtitle_style,
+        show_subtitles=show_subtitles,
+        subtitle_style=subtitle_style,
         active_color=template.active_color,
         normal_color=template.normal_color,
         font_name=template.font_name,
