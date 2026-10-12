@@ -28,6 +28,8 @@ class Highlight(BaseModel):
     duration: float = 0.0
     reason: str = ""
     summary_points: List[str] = Field(default_factory=list)
+    virality_score: int = 85
+    score_breakdown: dict = Field(default_factory=dict)
 
     def model_post_init(self, __context):
         if self.duration == 0.0:

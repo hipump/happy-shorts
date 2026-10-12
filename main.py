@@ -234,7 +234,8 @@ def interactive_wizard():
         template=template,
         target_dur=target_dur,
         show_subtitles=show_subtitles,
-        subtitle_style=sub_style
+        subtitle_style=sub_style,
+        interactive_preview=True
     )
 
 def run_with_progress(
@@ -243,7 +244,8 @@ def run_with_progress(
     template: ShortsTemplate,
     target_dur: tuple[int, int],
     show_subtitles: bool = True,
-    subtitle_style: str = "viral_pop"
+    subtitle_style: str = "viral_pop",
+    interactive_preview: bool = True
 ):
     pipeline = ShortsPipeline(
         whisper_model="small",
@@ -262,50 +264,12 @@ def run_with_progress(
         normalize_audio=True
     )
 
-    with Progress(
-        SpinnerColumn(spinner_name="dots"),
-        TextColumn("[bold cyan]{task.description}"),
-        BarColumn(bar_width=40, style="bright_black", complete_style="bold yellow"),
-        TaskProgressColumn(),
-        TimeElapsedColumn(),
-        console=console,
-        expand=False
-    ) as progress:
-        task_id = progress.add_task("[1/4] 파이프라인 초기화 중...", total=100)
-
-        def on_progress(pct: float, message: str):
-            progress.update(task_id, completed=pct, description=message)
-
-        results = pipeline.run(
-            source=source,
-            max_clips=clips_count,
-            target_duration=target_dur,
-            callback=on_progress
-        )
-        progress.update(task_id, completed=100, description="[bold green]🎉 모든 쇼츠 생성 완료![/bold green]")
-
-    # Summary Table
-    table = Table(title="🎉 생성된 쇼츠 결과 목록", show_header=True, header_style="bold magenta")
-    table.add_column("번호", width=6)
-    table.add_column("제목", style="cyan")
-    table.add_column("훅 헤드라인", style="yellow")
-    table.add_column("구간", justify="center")
-    table.add_column("길이", justify="center")
-    table.add_column("저장 경로", style="green")
-
-    for r in results:
-        table.add_row(
-            str(r["id"]),
-            r["title"],
-            r["hook_text"],
-            r["time_range"],
-            f"{r['duration']:.1f}초",
-            r["output_path"]
-        )
-
-    console.print("\n")
-    console.print(table)
-    console.print("\n[bold green]✨ 모든 작업이 성공적으로 끝났습니다![/bold green]\n")
+    results = pipeline.run(
+        source=source,
+        max_clips=clips_count,
+        target_duration=target_dur,
+        interactive_preview=interactive_preview
+    )
 
     try:
         open_finder = questionary.confirm("📂 생성된 쇼츠 폴더(output)를 Finder에서 여시겠습니까?", default=True).ask()
@@ -329,6 +293,8 @@ def parse_args():
     parser.add_argument("--no-badge", action="store_true", help="상단 훅 뱃지 끄기")
     parser.add_argument("--no-subtitles", action="store_true", help="자막(캡션) 생성 끄기")
     parser.add_argument("--subtitle-style", choices=["viral_pop", "clean_minimal", "none"], default=None, help="자막 스타일 오버라이드")
+    parser.add_argument("--preview", dest="preview", action="store_true", default=True, help="AI 하이라이트 후보 분석 표 및 대화형 선택 활성화 (기본값: On)")
+    parser.add_argument("--no-preview", dest="preview", action="store_false", help="후보 선택 없이 최고 점수 클립 자동 렌더링")
     parser.add_argument("--min-dur", type=int, default=30)
     parser.add_argument("--max-dur", type=int, default=50)
 
@@ -373,7 +339,8 @@ def main():
         pipeline.run(
             source=source,
             max_clips=args.clips,
-            target_duration=(args.min_dur, args.max_dur)
+            target_duration=(args.min_dur, args.max_dur),
+            interactive_preview=args.preview
         )
     except Exception as e:
         console.print(f"\n[bold red]❌ 실행 중 오류 발생:[/bold red] {e}")
@@ -381,3 +348,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

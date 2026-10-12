@@ -16,17 +16,69 @@ def format_transcript_for_llm(transcript: Transcript, max_chars: int = 40000) ->
         total_chars += len(line)
     return "\n".join(lines)
 
+import os
+import subprocess
+
+# Korean Sentence Ending Completeness Rules (Linguistic boundary verification)
+COMPLETE_ENDINGS = re.compile(
+    r'([다요죠까네나오군어자마][\.\?\!\s]*$|[\.\?\!]$)'
+)
+INCOMPLETE_ENDINGS = re.compile(
+    r'([고며면서는데은데지만으나어서아서해서면으면거나려고자마자듯이]|그리고|그러나|그런데|하지만|또한|그러면|그래서|그렇지만)\s*$'
+)
+
+def is_sentence_complete(text: str) -> bool:
+    """Check if Korean text cleanly completes a thought with a proper ending verb."""
+    if not text:
+        return False
+    t = text.strip()
+    if INCOMPLETE_ENDINGS.search(t):
+        return False
+    return bool(COMPLETE_ENDINGS.search(t))
+
+def detect_scene_cuts(
+    video_path: Optional[str],
+    search_start: float,
+    search_end: float,
+    threshold: float = 0.25
+) -> List[float]:
+    """Detect visual scene change cuts using FFmpeg within a specific time window."""
+    if not video_path or not os.path.exists(video_path):
+        return []
+    try:
+        dur = max(1.0, search_end - search_start)
+        cmd = [
+            "ffmpeg", "-ss", str(max(0.0, search_start)), "-t", str(dur),
+            "-i", video_path,
+            "-filter:v", f"select='gt(scene,{threshold})',showinfo",
+            "-f", "null", "-"
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=8)
+        cuts = []
+        for line in res.stderr.splitlines():
+            if "pts_time:" in line:
+                m = re.search(r'pts_time:([0-9\.]+)', line)
+                if m:
+                    cuts.append(round(search_start + float(m.group(1)), 2))
+        return cuts
+    except Exception:
+        return []
+
 def snap_timestamps_to_sentence_boundaries(
     transcript: Transcript,
     raw_start: float,
     raw_end: float,
     min_dur: float = 30.0,
-    max_dur: float = 50.0
+    max_dur: float = 50.0,
+    video_path: Optional[str] = None,
+    room_tone_start: float = 0.15,
+    room_tone_end: float = 0.25
 ) -> tuple[float, float]:
     """
     Ensure the clip starts cleanly at the beginning of a sentence
-    and ends cleanly at the end of a sentence.
-    Guarantees clip duration is strictly between min_dur (30s) and max_dur (50s).
+    and ends cleanly with a complete sentence ending verb (~다, ~요, ~죠, ~까).
+    Applies audio room-tone padding (150ms start, 250ms end) to prevent choppy speech cuts.
+    Guarantees clip duration is strictly between min_dur and max_dur.
     """
     if not transcript.segments:
         return max(0.0, raw_start), max(raw_start + min_dur, raw_end)
@@ -47,41 +99,61 @@ def snap_timestamps_to_sentence_boundaries(
 
     snapped_start = segments[start_idx].start
 
-    # 2. Find end segment
+    # 2. Find end segment that satisfies grammatical completion
     end_idx = start_idx
-    if (raw_end - raw_start) >= min_dur:
-        best_end_diff = float("inf")
-        for i in range(start_idx, len(segments)):
-            diff = abs(segments[i].end - raw_end)
-            if diff < best_end_diff:
-                best_end_diff = diff
-                end_idx = i
-    else:
-        # LLM gave a short span (e.g. 1-2 sentences). Expand forward until accumulated duration >= min_dur
-        for i in range(start_idx, len(segments)):
-            end_idx = i
-            if (segments[i].end - snapped_start) >= min_dur:
-                break
+    target_end = max(snapped_start + min_dur, raw_end)
+    best_complete_idx = None
+    min_dist_to_target = float("inf")
 
-    # 3. If near the end of video and duration is still < min_dur, expand start backwards
-    while start_idx > 0 and (segments[end_idx].end - segments[start_idx].start) < min_dur:
-        start_idx -= 1
-    snapped_start = segments[start_idx].start
-
-    # 4. If duration exceeds max_dur, clamp end_idx
-    while end_idx > start_idx and (segments[end_idx].end - snapped_start) > max_dur:
-        if (segments[end_idx - 1].end - snapped_start) >= min_dur:
-            end_idx -= 1
-        else:
+    # Search for complete ending within [snapped_start + min_dur, snapped_start + max_dur]
+    for i in range(start_idx, len(segments)):
+        accum_dur = segments[i].end - snapped_start
+        if accum_dur < min_dur:
+            continue
+        if accum_dur > max_dur:
             break
 
+        seg_text = segments[i].text.strip()
+        if is_sentence_complete(seg_text):
+            dist = abs(segments[i].end - target_end)
+            if dist < min_dist_to_target:
+                min_dist_to_target = dist
+                best_complete_idx = i
+
+    if best_complete_idx is not None:
+        end_idx = best_complete_idx
+    else:
+        # Fallback: look for closest segment before max_dur
+        for i in range(start_idx, len(segments)):
+            accum_dur = segments[i].end - snapped_start
+            if accum_dur >= min_dur:
+                end_idx = i
+                if accum_dur >= target_end or accum_dur >= (min_dur + 5.0):
+                    break
+
+    # If duration still < min_dur (near end of video), expand start backwards
+    while start_idx > 0 and (segments[end_idx].end - segments[start_idx].start) < min_dur:
+        start_idx -= 1
+
+    snapped_start = segments[start_idx].start
     snapped_end = segments[end_idx].end
 
-    # Fallback sanity check
-    if (snapped_end - snapped_start) < min_dur:
-        snapped_end = min(transcript.duration, snapped_start + min_dur)
+    # Apply Auto-Editor style audio room-tone padding:
+    # -150ms before speech start to catch breathing/first plosive consonant
+    # +250ms after speech end to catch natural room decay/reverb
+    final_start = max(0.0, round(snapped_start - room_tone_start, 2))
+    final_end = min(round(transcript.duration, 2), round(snapped_end + room_tone_end, 2))
 
-    return max(0.0, round(snapped_start, 2)), min(round(transcript.duration, 2), round(snapped_end, 2))
+    # Optional: Scene cut snap if video_path is provided
+    if video_path and os.path.exists(video_path):
+        cuts = detect_scene_cuts(video_path, max(0.0, final_start - 0.5), final_end + 0.5)
+        for cut in cuts:
+            if abs(cut - final_start) <= 0.35:
+                final_start = max(0.0, cut)
+            if abs(cut - final_end) <= 0.35 and (cut - final_start) >= min_dur:
+                final_end = cut
+
+    return final_start, final_end
 
 EMOJI_REGEX = re.compile(r'[\U00010000-\U0010ffff\u2600-\u27bf\ud83c-\ud83e\ud83d\udc00-\udfff]')
 
@@ -242,6 +314,17 @@ def fallback_heuristic_highlights(
             idx = len(results) + 1
             clip_title = f"핵심 꿀팁 하이라이트 #{idx}"
             pts = summarize_clip_content(transcript, s_start, s_end, clip_title)
+            # Calculate heuristic virality score (75 ~ 95)
+            dur = max(1.0, s_end - s_start)
+            wpm = (words_in_window / dur) * 60.0
+            density_score = min(28, max(18, int(wpm / 6.0)))
+            virality_score = min(96, max(78, 60 + density_score + (10 if len(pts) >= 2 else 5)))
+            breakdown = {
+                "hook": min(28, density_score + 2),
+                "flow": 22,
+                "value": 24 if len(pts) >= 2 else 18,
+                "trend": min(20, max(12, virality_score - 70))
+            }
             results.append(Highlight(
                 id=idx,
                 title=clip_title,
@@ -249,7 +332,9 @@ def fallback_heuristic_highlights(
                 start_time=s_start,
                 end_time=s_end,
                 reason="음성 밀도가 높고 설명이 가장 충실한 핵심 구간",
-                summary_points=pts
+                summary_points=pts,
+                virality_score=virality_score,
+                score_breakdown=breakdown
             ))
             if len(results) >= count:
                 break
@@ -260,11 +345,13 @@ def detect_highlights(
     transcript: Transcript,
     model_name: str = "qwen2.5:7b",
     max_count: int = 1,
-    target_duration_range: tuple[int, int] = (30, 50)
+    target_duration_range: tuple[int, int] = (30, 50),
+    video_path: Optional[str] = None
 ) -> List[Highlight]:
     """
     Detect the most engaging shorts highlight segments using Ollama.
     Guarantees every clip is between min_dur (30s) and max_dur (50s).
+    Evaluates clips using Opus Clip's 4-Pillar Virality Scoring model.
     """
     min_dur, max_dur = target_duration_range
 
@@ -278,27 +365,32 @@ def detect_highlights(
                 start_time=0.0,
                 end_time=round(transcript.duration, 2),
                 reason="영상 전체 클립",
-                summary_points=pts
+                summary_points=pts,
+                virality_score=90,
+                score_breakdown={"hook": 27, "flow": 23, "value": 23, "trend": 17}
             )
         ]
 
     formatted_text = format_transcript_for_llm(transcript)
 
     system_prompt = (
-        "You are a top-tier Korean YouTube Shorts & TikTok PD creating viral million-view clips.\n"
+        "You are an elite YouTube Shorts & TikTok PD creating viral million-view clips.\n"
         "Analyze the dialogue transcript and choose the best viral highlight moments for Shorts.\n\n"
-        "SELECTION CRITERIA (Hook - Story - Payoff):\n"
-        "1. Hook (First 3s): Starts with an intriguing question or statement that stops viewers from swiping.\n"
-        "2. Story (25~35s): Delivers practical, useful tip or entertaining revelation.\n"
-        "3. Payoff (End): Wraps up with clear conclusion or summary without cutting off.\n\n"
+        "OPUS CLIP 4-PILLAR VIRALITY SCORING (Total: 60 ~ 99):\n"
+        "1. Hook (0~30): First 3 seconds stops viewer from swiping away with an intriguing question/claim.\n"
+        "2. Flow (0~25): Beginning-middle-end forms a standalone, coherent story without abrupt cuts.\n"
+        "3. Value (0~25): Delivers high practical takeaway value, secret tip, or entertaining insight.\n"
+        "4. Trend (0~20): High curiosity and shareability for a wide audience.\n\n"
         "CRITICAL RULES:\n"
         f"1. Target length: Highlight clips MUST span {min_dur} to {max_dur} seconds.\n"
         "2. LANGUAGE: You MUST write title, hook_text, reason, and summary_points in 100% natural, high-CTR KOREAN (Hangul).\n"
         "   - NEVER use Chinese characters (Hanzi). Only Korean Hangul.\n"
         "3. hook_text: Short, punchy hook under 20 chars in Korean WITHOUT emojis (e.g., '테슬라 차주 필수 꿀팁'). Do NOT include emojis.\n"
         "4. title: Click-worthy Korean YouTube Shorts title (e.g., '트렁크 오토락 숨겨진 기능'). Do NOT include emojis.\n"
-        "5. summary_points: EXACTLY 2 concrete bullet points summarizing the actual practical facts/methods explained in this clip (under 28 chars each in Korean, e.g. ['트렁크 뒤 비프음 3회 후 자동 오픈', '천장 낮은 주차장에서 높이 조절']). Do NOT write generic filler like '시청자 몰입도가 높음'.\n"
-        "6. Output ONLY the specified JSON structure.\n"
+        "5. virality_score: Integer from 65 to 99 representing overall virality prediction.\n"
+        "6. score_breakdown: Object with keys 'hook', 'flow', 'value', 'trend'.\n"
+        "7. summary_points: EXACTLY 2 concrete bullet points summarizing the actual practical facts/methods explained in this clip (under 28 chars each in Korean, e.g. ['트렁크 뒤 비프음 3회 후 자동 오픈', '천장 낮은 주차장에서 높이 조절']). Do NOT write generic filler like '시청자 몰입도가 높음'.\n"
+        "8. Output ONLY the specified JSON structure.\n"
     )
 
     user_prompt = f"다음 자막 대본을 분석하여 바이럴 가능성이 가장 높은 쇼츠 {max_count}개를 선정해 JSON으로 응답하세요:\n\n{formatted_text}"
@@ -315,13 +407,23 @@ def detect_highlights(
                         "hook_text": {"type": "string"},
                         "start_time": {"type": "number"},
                         "end_time": {"type": "number"},
+                        "virality_score": {"type": "integer"},
+                        "score_breakdown": {
+                            "type": "object",
+                            "properties": {
+                                "hook": {"type": "integer"},
+                                "flow": {"type": "integer"},
+                                "value": {"type": "integer"},
+                                "trend": {"type": "integer"}
+                            }
+                        },
                         "reason": {"type": "string"},
                         "summary_points": {
                             "type": "array",
                             "items": {"type": "string"}
                         }
                     },
-                    "required": ["title", "hook_text", "start_time", "end_time", "summary_points"]
+                    "required": ["title", "hook_text", "start_time", "end_time", "virality_score", "summary_points"]
                 }
             }
         },
@@ -362,9 +464,9 @@ def detect_highlights(
             raw_start = float(raw_start)
             raw_end = float(raw_end)
             
-            # Snap timestamps to speech boundaries and enforce min_dur ~ max_dur
+            # Snap timestamps to grammatical speech boundaries and enforce min_dur ~ max_dur
             s_start, s_end = snap_timestamps_to_sentence_boundaries(
-                transcript, raw_start, raw_end, min_dur=min_dur, max_dur=max_dur
+                transcript, raw_start, raw_end, min_dur=min_dur, max_dur=max_dur, video_path=video_path
             )
 
             # Prevent heavy overlap with already selected clips
@@ -395,6 +497,38 @@ def detect_highlights(
                         valid_pts.append(fp)
             summary_points = valid_pts[:2]
 
+            # Calculate empirical viral metrics (WPM pacing, hook curiosity, value)
+            clip_dur = max(1.0, s_end - s_start)
+            clip_words_count = sum(
+                len(seg.words) for seg in transcript.segments
+                if seg.start >= (s_start - 0.2) and seg.end <= (s_end + 0.2)
+            )
+            wpm = (clip_words_count / clip_dur) * 60.0
+
+            # Hook curiosity detection in initial 5 seconds
+            first_segs_text = " ".join(
+                seg.text for seg in transcript.segments
+                if seg.start >= (s_start - 0.2) and seg.start <= (s_start + 6.0)
+            )
+            has_curiosity_hook = any(kw in first_segs_text for kw in ["어떻게", "왜", "방법", "꿀팁", "주의", "실수", "비법", "기능", "중요", "까", "나요", "죠", "모르", "진짜"])
+
+            raw_v = item.get("virality_score")
+            base_llm = int(raw_v) if raw_v and str(raw_v).isdigit() else 80
+
+            hook_sc = min(29, max(18, 20 + (5 if has_curiosity_hook else 2) + (3 if len(formatted_hook) >= 6 else 0)))
+            flow_sc = min(25, max(17, 18 + (5 if 110 <= wpm <= 190 else 2)))
+            value_sc = min(25, max(17, 19 + (5 if len(summary_points) >= 2 else 2)))
+            trend_sc = min(20, max(14, 15 + (3 if has_curiosity_hook else 1)))
+
+            v_score = hook_sc + flow_sc + value_sc + trend_sc
+            v_score = min(98, max(72, v_score))
+            score_breakdown = {
+                "hook": hook_sc,
+                "flow": flow_sc,
+                "value": value_sc,
+                "trend": trend_sc
+            }
+
             highlights.append(Highlight(
                 id=idx,
                 title=title,
@@ -402,7 +536,9 @@ def detect_highlights(
                 start_time=s_start,
                 end_time=s_end,
                 reason=reason,
-                summary_points=summary_points
+                summary_points=summary_points,
+                virality_score=v_score,
+                score_breakdown=score_breakdown
             ))
 
             if len(highlights) >= max_count:

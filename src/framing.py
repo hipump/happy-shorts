@@ -97,22 +97,32 @@ def build_framing_filter(
     start_time: float,
     end_time: float,
     video_box: Optional[Tuple[int, int, int, int]] = None,
-    bg_input_idx: int = 1
+    bg_input_idx: int = 1,
+    enable_punch_in_zoom: bool = True
 ) -> Tuple[str, str]:
     """
     Build FFmpeg video filtergraph string for 9:16 layout.
     Supports:
     - Graphic template placement (video_box: vx, vy, vw, vh onto template background)
+    - Dynamic Punch-in Zoom (Submagic-style 1.10x focal zoom during middle explanation)
     - smart_crop (AI face tracking 9:16)
     - blur_background (box-blurred video backdrop)
     - studio_card (floating card fallback)
     Returns: (filter_str, final_label)
     """
+    dur = max(1.0, end_time - start_time)
+    z_start = round(dur * 0.25, 1)
+    z_end = round(dur * 0.65, 1)
+    # 1.10x center punch-in zoom during middle climax (if enabled and clip >= 15s)
+    zoom_filter = ""
+    if enable_punch_in_zoom and dur >= 15.0:
+        zoom_filter = f"crop='if(between(t,{z_start},{z_end}),iw/1.10,iw)':'if(between(t,{z_start},{z_end}),ih/1.10,ih)':(iw-ow)/2:(ih-oh)/2,"
+
     if video_box is not None and layout_mode not in ["smart_crop", "blur_background"]:
         vx, vy, vw, vh = video_box
         # Scale to fit box preserving aspect ratio, pad with black if needed
         vf = (
-            f"[0:v]scale={vw}:{vh}:force_original_aspect_ratio=decrease,pad={vw}:{vh}:(ow-iw)/2:(oh-ih)/2:color=black,format=rgba[fg];"
+            f"[0:v]{zoom_filter}scale={vw}:{vh}:force_original_aspect_ratio=decrease,pad={vw}:{vh}:(ow-iw)/2:(oh-ih)/2:color=black,format=rgba[fg];"
             f"[{bg_input_idx}:v][fg]overlay={vx}:{vy}[base]"
         )
         return vf, "base"
@@ -128,14 +138,14 @@ def build_framing_filter(
         else:
             x = (orig_width - crop_w) // 2
 
-        vf = f"[0:v]crop={crop_w}:{orig_height}:{x}:0,scale=1080:1920[base]"
+        vf = f"[0:v]{zoom_filter}crop={crop_w}:{orig_height}:{x}:0,scale=1080:1920[base]"
         return vf, "base"
 
     elif layout_mode == "blur_background":
         vf = (
             "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
             "crop=1080:1920,boxblur=30:8,eq=brightness=-0.16:contrast=1.06[bg];"
-            "[0:v]scale=1080:-2:force_original_aspect_ratio=decrease[fg];"
+            f"[0:v]{zoom_filter}scale=1080:-2:force_original_aspect_ratio=decrease[fg];"
             "[bg][fg]overlay=(W-w)/2:(H-h)/2[base]"
         )
         return vf, "base"
@@ -155,6 +165,7 @@ def build_framing_filter(
         crop_w = int(orig_height * 9 / 16)
         crop_w = min(crop_w, orig_width)
         x = (orig_width - crop_w) // 2
-        vf = f"[0:v]crop={crop_w}:{orig_height}:{x}:0,scale=1080:1920[base]"
+        vf = f"[0:v]{zoom_filter}crop={crop_w}:{orig_height}:{x}:0,scale=1080:1920[base]"
         return vf, "base"
+
 
