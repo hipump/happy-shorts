@@ -52,7 +52,7 @@ TEMPLATES: Dict[str, ShortsTemplate] = {
         marker_color=(0, 255, 180, 210),   # Cyber Mint
         font_name="black_han_sans",
         video_box=(70, 435, 940, 528),
-        subtitle_y=1120
+        subtitle_y=1053
     ),
 
     # 3. 네온 매거진
@@ -70,7 +70,7 @@ TEMPLATES: Dict[str, ShortsTemplate] = {
         marker_color=(255, 230, 0, 220),   # Marker Yellow
         font_name="black_han_sans",
         video_box=(50, 350, 980, 551),
-        subtitle_y=1040
+        subtitle_y=1020
     ),
 
     # 4. 모던 클린 교육
@@ -88,7 +88,7 @@ TEMPLATES: Dict[str, ShortsTemplate] = {
         marker_color=(50, 130, 255, 180),
         font_name="pretendard",
         video_box=(70, 440, 940, 528),
-        subtitle_y=1140
+        subtitle_y=1132
     ),
 
     # 5. 카카오톡 / 메신저 대화 (NEW)
@@ -124,7 +124,7 @@ TEMPLATES: Dict[str, ShortsTemplate] = {
         marker_color=(255, 160, 0, 220),
         font_name="black_han_sans",
         video_box=(70, 430, 940, 528),
-        subtitle_y=1130
+        subtitle_y=1128
     ),
 
     # 7. 내돈내산 상품 리뷰 & 별점 (NEW)
@@ -142,7 +142,7 @@ TEMPLATES: Dict[str, ShortsTemplate] = {
         marker_color=(0, 230, 160, 210),
         font_name="pretendard",
         video_box=(60, 420, 960, 540),
-        subtitle_y=1120
+        subtitle_y=1132
     ),
 
     # 8. 동기부여 & 명언 매거진 (NEW)
@@ -160,7 +160,7 @@ TEMPLATES: Dict[str, ShortsTemplate] = {
         marker_color=(245, 200, 80, 190),
         font_name="pretendard",
         video_box=(70, 460, 940, 528),
-        subtitle_y=1150
+        subtitle_y=1155
     ),
 
     # 9. 밸런스 게임 & 퀴즈 (NEW)
@@ -178,7 +178,7 @@ TEMPLATES: Dict[str, ShortsTemplate] = {
         marker_color=(255, 70, 85, 210),
         font_name="black_han_sans",
         video_box=(60, 440, 960, 540),
-        subtitle_y=1150
+        subtitle_y=1062
     ),
 
     # 10. 감성 브이로그 & 일상 폴라로이드 (NEW)
@@ -196,7 +196,7 @@ TEMPLATES: Dict[str, ShortsTemplate] = {
         marker_color=(240, 210, 170, 200),
         font_name="pretendard",
         video_box=(70, 400, 940, 528),
-        subtitle_y=1120
+        subtitle_y=1162
     ),
 
     # 11. 인터뷰 9:16 인물 풀스크린
@@ -286,7 +286,7 @@ TEMPLATES: Dict[str, ShortsTemplate] = {
         marker_color=(255, 59, 48, 210),
         font_name="pretendard",
         video_box=(60, 320, 960, 960),
-        subtitle_y=1400
+        subtitle_y=1365
     ),
 
     # 16. 페페 & 카툰 컷분할 리액션 (MiriCanvas 인기)
@@ -304,7 +304,7 @@ TEMPLATES: Dict[str, ShortsTemplate] = {
         marker_color=(255, 220, 0, 220),
         font_name="black_han_sans",
         video_box=(60, 420, 960, 640),
-        subtitle_y=1180
+        subtitle_y=1217
     ),
 
     # 17. 금주 개봉작 시네마틱 필름 티켓 (MiriCanvas 인기)
@@ -322,7 +322,7 @@ TEMPLATES: Dict[str, ShortsTemplate] = {
         marker_color=(245, 210, 110, 190),
         font_name="pretendard",
         video_box=(50, 420, 980, 551),
-        subtitle_y=1120
+        subtitle_y=1132
     ),
 
     # 18. 흔한 팬의 일상 원형 차트 (MiriCanvas 인기)
@@ -340,7 +340,7 @@ TEMPLATES: Dict[str, ShortsTemplate] = {
         marker_color=(255, 80, 70, 210),
         font_name="black_han_sans",
         video_box=(60, 400, 960, 540),
-        subtitle_y=1120
+        subtitle_y=1112
     ),
 
     # 19. 오운완 챌린지 & 운동 미션 (MiriCanvas 인기)
@@ -358,7 +358,7 @@ TEMPLATES: Dict[str, ShortsTemplate] = {
         marker_color=(255, 60, 40, 220),
         font_name="black_han_sans",
         video_box=(60, 420, 960, 600),
-        subtitle_y=1140
+        subtitle_y=1187
     ),
 
     # 20. 감성 습관 & 라이프스타일 3D 스티커 (MiriCanvas 인기)
@@ -412,7 +412,7 @@ TEMPLATES: Dict[str, ShortsTemplate] = {
         marker_color=(255, 50, 60, 220),
         font_name="black_han_sans",
         video_box=(0, 0, 1080, 1920),
-        subtitle_y=1420
+        subtitle_y=1320
     ),
 
     # 23. 모르면 손해보는 청년혜택 총정리 (MiriCanvas 인기)
@@ -430,7 +430,7 @@ TEMPLATES: Dict[str, ShortsTemplate] = {
         marker_color=(255, 235, 0, 220),
         font_name="black_han_sans",
         video_box=(0, 0, 1080, 1920),
-        subtitle_y=1400
+        subtitle_y=1340
     ),
 
     # 24. 이번 주 짧은 드라마 명장면 다시보기 (MiriCanvas 인기)

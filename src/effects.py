@@ -97,6 +97,50 @@ def draw_3d_text(
         anchor=anchor
     )
 
+def draw_card_with_shadow(
+    img: Image.Image,
+    box: List[int],
+    radius: int = 24,
+    fill: Tuple[int, int, int, int] = (255, 255, 255, 255),
+    outline: Optional[Tuple[int, int, int, int]] = (220, 225, 235, 255),
+    width: int = 2,
+    shadow_blur: int = 16,
+    shadow_offset: Tuple[int, int] = (0, 8),
+    shadow_color: Tuple[int, int, int, int] = (0, 0, 0, 60)
+):
+    """Draws a card with multi-layer soft blur drop shadow and crisp outline."""
+    bx1, by1, bx2, by2 = box
+    sx1, sy1 = bx1 + shadow_offset[0], by1 + shadow_offset[1]
+    sx2, sy2 = bx2 + shadow_offset[0], by2 + shadow_offset[1]
+
+    shadow_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    s_draw = ImageDraw.Draw(shadow_layer)
+    s_draw.rounded_rectangle([sx1, sy1, sx2, sy2], radius=radius, fill=shadow_color)
+    shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(shadow_blur))
+    img.alpha_composite(shadow_layer)
+
+    card_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    c_draw = ImageDraw.Draw(card_layer)
+    c_draw.rounded_rectangle([bx1, by1, bx2, by2], radius=radius, fill=fill, outline=outline, width=width)
+    img.alpha_composite(card_layer)
+
+def make_vertical_gradient(w: int, h: int, c1: Tuple[int, int, int], c2: Tuple[int, int, int]) -> Image.Image:
+    """Creates a smooth 2-stop vertical gradient background."""
+    grad = Image.new("RGBA", (1, h))
+    for y in range(h):
+        f = y / max(1, h - 1)
+        r = int(c1[0] + f * (c2[0] - c1[0]))
+        g = int(c1[1] + f * (c2[1] - c1[1]))
+        b = int(c1[2] + f * (c2[2] - c1[2]))
+        grad.putpixel((0, y), (r, g, b, 255))
+    return grad.resize((w, h), Image.Resampling.BILINEAR)
+
+def draw_tesla_t(draw: ImageDraw.ImageDraw, x: int, y: int, col: Tuple[int, int, int] = (235, 25, 45)):
+    """Draws precise vector Tesla 'T' badge."""
+    draw.polygon([(x - 22, y), (x + 22, y), (x + 20, y + 6), (x - 20, y + 6)], fill=col)
+    draw.polygon([(x - 14, y + 10), (x + 14, y + 10), (x + 4, y + 42), (x - 4, y + 42)], fill=col)
+    draw.arc([x - 28, y - 4, x + 28, y + 12], 200, 340, fill=col, width=4)
+
 def render_template_background(
     template: ShortsTemplate,
     highlight: Highlight,
@@ -112,15 +156,13 @@ def render_template_background(
     - Video Container Frame (Drop shadow, borders, window titlebars, corner chips)
     - Bottom Deck (Briefing card / Console box / Hashtag chips / Bullet points)
     """
-    img = Image.new("RGBA", (canvas_w, canvas_h), (20, 24, 32, 255))
-    draw = ImageDraw.Draw(img)
-
     f_black_72 = get_font(FONT_BLACK_HAN_SANS, 72)
     f_black_58 = get_font(FONT_BLACK_HAN_SANS, 58)
     f_pret_50 = get_font(FONT_PRETENDARD, 50)
     f_pret_36 = get_font(FONT_PRETENDARD, 36)
     f_pret_28 = get_font(FONT_PRETENDARD, 28)
     f_pret_22 = get_font(FONT_PRETENDARD, 22)
+    f_pret_18 = get_font(FONT_PRETENDARD, 18)
 
     line1, line2 = split_hook_headline(highlight.title, highlight.hook_text)
     if not line1:
@@ -132,67 +174,87 @@ def render_template_background(
     # 1. NEWS PORTAL (미리캔버스 속보 & 뉴스 포털)
     # =========================================================================
     if template.layout_type == "news_portal":
-        img = Image.new("RGBA", (canvas_w, canvas_h), (247, 248, 250, 255))
+        img = make_vertical_gradient(canvas_w, canvas_h, (248, 250, 254), (236, 240, 248))
         draw = ImageDraw.Draw(img)
 
         # 1-1. Top Broadcast Red Bar
-        draw.rectangle([0, 0, canvas_w, 130], fill=(215, 25, 35, 255))
-        draw.text((70, 65), "MIRI NEWS", font=f_pret_36, fill=(255, 255, 255), anchor="lm")
+        draw.rectangle([0, 0, canvas_w, 136], fill=(215, 25, 38, 255))
+        draw.text((70, 68), "MIRI NEWS", font=f_black_58, fill=(255, 255, 255), anchor="lm")
         # LIVE pill with red dot
-        draw.rounded_rectangle([320, 44, 460, 86], radius=21, fill=(0, 0, 0, 200))
-        draw.ellipse([335, 57, 351, 73], fill=(255, 50, 50))
-        draw.text((400, 65), "LIVE", font=f_pret_28, fill=(255, 255, 255), anchor="mm")
-        draw.text((canvas_w - 70, 65), "속보 특보", font=f_pret_28, fill=(255, 255, 255), anchor="rm")
+        draw.rounded_rectangle([380, 46, 520, 90], radius=22, fill=(0, 0, 0, 180))
+        draw.ellipse([400, 60, 416, 76], fill=(255, 60, 60))
+        draw.text((465, 68), "LIVE", font=f_pret_28, fill=(255, 255, 255), anchor="mm")
+        draw.text((canvas_w - 70, 68), "속보 특보", font=f_pret_28, fill=(255, 255, 255), anchor="rm")
 
-        # 1-2. Headline Block
+        # 1-2. Floating Headline Card with Drop Shadow
         hy = 165
+        head_box = [60, hy, canvas_w - 60, hy + 265]
+        draw_card_with_shadow(img, head_box, radius=24, fill=(255, 255, 255, 255), outline=(225, 230, 240, 255), shadow_blur=16, shadow_offset=(0, 8), shadow_color=(0, 0, 0, 40))
+
+        draw = ImageDraw.Draw(img)
         # Red category chip
-        draw.rounded_rectangle([70, hy, 380, hy + 46], radius=8, fill=(255, 230, 235), outline=(255, 180, 190), width=1)
-        draw.text((82, hy + 23), "긴급 속보  •  필독 리포트", font=f_pret_28, fill=(215, 25, 35), anchor="lm")
+        draw.rounded_rectangle([90, hy + 22, 350, hy + 64], radius=10, fill=(255, 235, 238), outline=(255, 180, 190), width=1)
+        draw.text((105, hy + 43), "긴급 속보 • 단독 리포트", font=f_pret_22, fill=(215, 25, 38), anchor="lm")
 
         # Line 1
-        draw.text((70, hy + 62), line1, font=f_pret_50, fill=(20, 24, 30), anchor="lt")
+        draw.text((90, hy + 102), line1[:28], font=f_pret_36, fill=(20, 25, 35), anchor="lm")
 
         # Line 2 with Highlighter Marker Tape
-        l2_font = f_pret_50
+        l2_font = f_black_58
         l2_bbox = l2_font.getbbox(line2)
-        if (l2_bbox[2] - l2_bbox[0]) > 900:
+        if (l2_bbox[2] - l2_bbox[0]) > 880:
             l2_font = f_pret_36
             l2_bbox = l2_font.getbbox(line2)
         l2_w = l2_bbox[2] - l2_bbox[0]
         l2_h = l2_bbox[3] - l2_bbox[1]
-        draw_marker(draw, [70, hy + 125, 70 + l2_w, hy + 125 + l2_h], color=template.marker_color, pad_x=8)
-        draw.text((70, hy + 125), line2, font=l2_font, fill=(10, 12, 16), anchor="lt")
+        draw_marker(draw, [90, hy + 155, 90 + l2_w, hy + 155 + l2_h], color=template.marker_color, pad_x=10)
+        draw.text((90, hy + 180), line2, font=l2_font, fill=(255, 255, 255) if template.marker_color[0] > 180 else (10, 12, 16), anchor="lm")
 
         # Byline
-        draw.text((70, hy + 200), "단독 취재 | 핵심 꿀팁 특종  •  실시간 제보", font=f_pret_22, fill=(120, 125, 135), anchor="lt")
-        draw.line([(70, hy + 235), (canvas_w - 70, hy + 235)], fill=(220, 225, 235), width=2)
+        draw.text((90, hy + 236), "단독 취재 | 핵심 꿀팁 특종 • 실시간 제보", font=f_pret_18, fill=(130, 135, 145), anchor="lm")
 
-        # 1-3. Video Container Frame (70, 460, 940, 528)
+        # 1-3. Video Container Frame with Drop Shadow
         vx, vy, vw, vh = template.video_box
-        draw.rounded_rectangle([vx - 4, vy - 4, vx + vw + 4, vy + vh + 4], radius=16, fill=(20, 24, 30))
+        v_shadow = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+        vs_draw = ImageDraw.Draw(v_shadow)
+        vs_draw.rounded_rectangle([vx - 2, vy + 6, vx + vw + 2, vy + vh + 10], radius=20, fill=(0, 0, 0, 70))
+        v_shadow = v_shadow.filter(ImageFilter.GaussianBlur(16))
+        img.alpha_composite(v_shadow)
+
+        draw = ImageDraw.Draw(img)
+        draw.rounded_rectangle([vx - 3, vy - 3, vx + vw + 3, vy + vh + 3], radius=18, fill=(20, 24, 30))
         # Top-left red sticker on video frame
-        draw.rounded_rectangle([vx + 20, vy + 20, vx + 220, vy + 66], radius=10, fill=(215, 25, 35, 245))
+        draw.rounded_rectangle([vx + 20, vy + 20, vx + 220, vy + 66], radius=10, fill=(215, 25, 38, 245))
         draw.text((vx + 120, vy + 43), "HOT 실시간 제보", font=f_pret_28, fill=(255, 255, 255), anchor="mm")
 
-        # 1-4. Bottom News Briefing Card (Clean MiriCanvas Article Style without empty holes)
-        by = vy + vh + 30
-        draw.rounded_rectangle([70, by, canvas_w - 70, by + 360], radius=24, fill=(255, 255, 255), outline=(220, 225, 235), width=2)
-        # Card header badge
-        draw.rounded_rectangle([100, by + 24, 340, by + 68], radius=12, fill=(215, 25, 35))
-        draw.text((220, by + 46), "MIRI NEWS 단독 리포트", font=f_pret_22, fill=(255, 255, 255), anchor="mm")
-        draw.text((canvas_w - 100, by + 46), "실시간 팩트체크", font=f_pret_22, fill=(120, 125, 135), anchor="rm")
+        # 1-4. Bottom News Briefing Card with Drop Shadow
+        by = vy + vh + 32
+        b_box = [60, by, canvas_w - 60, by + 460]
+        draw_card_with_shadow(img, b_box, radius=24, fill=(255, 255, 255, 255), outline=(225, 230, 240, 255), shadow_blur=16, shadow_offset=(0, 8), shadow_color=(0, 0, 0, 40))
 
-        # Bullet summary points - clean readable text layout
+        draw = ImageDraw.Draw(img)
+        # Card header badge
+        draw.rounded_rectangle([b_box[0] + 30, b_box[1] + 25, b_box[0] + 280, b_box[1] + 68], radius=12, fill=(215, 25, 38))
+        draw.text((b_box[0] + 155, b_box[1] + 46), "MIRI NEWS 현장 브리핑", font=f_pret_22, fill=(255, 255, 255), anchor="mm")
+        draw.text((b_box[2] - 30, b_box[1] + 46), "FACT-CHECK 완료", font=f_pret_22, fill=(120, 130, 145), anchor="rm")
+
+        # Subtitle slot background pill
+        draw.rounded_rectangle([b_box[0] + 25, b_box[1] + 90, b_box[2] - 25, b_box[1] + 210], radius=16, fill=(18, 22, 30))
+
+        # Bullet summary points
         pts = highlight.summary_points if highlight.summary_points else [
             f"{highlight.title} 실전 핵심 설정",
             "상황별 권장 사용 가이드"
         ]
         p1 = f"• {pts[0]}"
         p2 = f"• {pts[1]}" if len(pts) > 1 else f"• {highlight.title} 실전 활용 팁"
-        draw.text((100, by + 105), p1[:36], font=f_pret_36, fill=(25, 30, 40), anchor="lt")
-        draw.text((100, by + 175), p2[:36], font=f_pret_28, fill=(50, 55, 68), anchor="lt")
-        draw.text((100, by + 250), "• [보도국] 자세한 내용은 상단 링크 및 채널에서 확인 가능", font=f_pret_22, fill=(120, 125, 140), anchor="lt")
+        draw.text((b_box[0] + 35, b_box[1] + 250), p1[:34], font=f_pret_36, fill=(25, 30, 40), anchor="lm")
+        draw.text((b_box[0] + 35, b_box[1] + 315), p2[:34], font=f_pret_28, fill=(70, 80, 95), anchor="lm")
+        draw.text((b_box[0] + 35, b_box[1] + 380), "• [보도국] 자세한 내용은 상단 링크 및 채널에서 확인 가능", font=f_pret_22, fill=(130, 140, 155), anchor="lm")
+
+        # Bottom News Ticker Bar
+        draw.rectangle([0, canvas_h - 70, canvas_w, canvas_h], fill=(20, 24, 32))
+        draw.text((70, canvas_h - 35), "▶ [단독 속보] 해피 쇼츠 스튜디오 AI 자동 생성기 100% 로컬 무료 구동 중", font=f_pret_22, fill=(255, 255, 255), anchor="lm")
 
     # =========================================================================
     # 2. BROWSER WINDOW (인터넷창 / 맥OS 브라우저 창 썸네일)
@@ -251,16 +313,21 @@ def render_template_background(
         draw.rectangle([vx - 2, vy - 2, vx + vw + 2, vy + vh + 2], fill=(0, 0, 0))
 
         # Window Content Tip Card (inside macOS browser, no empty holes)
-        sub_box_y = vy + vh + 30
-        draw.rounded_rectangle([wx1 + 30, sub_box_y, wx2 - 30, sub_box_y + 155], radius=16, fill=(255, 255, 255), outline=(215, 220, 232), width=1)
-        draw.text((wx1 + 55, sub_box_y + 35), "💡 실전 추천 포인트 & 가이드", font=f_pret_28, fill=(25, 30, 45), anchor="lt")
+        sub_box_y = vy + vh + 25
+        # Subtitle slot inside macOS window
+        draw.rounded_rectangle([wx1 + 30, sub_box_y, wx2 - 30, sub_box_y + 130], radius=16, fill=(255, 255, 255), outline=(210, 216, 228), width=1)
+
+        # Window Content Tip Card
+        tip_y = sub_box_y + 155
+        draw.rounded_rectangle([wx1 + 30, tip_y, wx2 - 30, tip_y + 135], radius=16, fill=(255, 255, 255), outline=(215, 220, 232), width=1)
+        draw.text((wx1 + 55, tip_y + 24), "💡 실전 추천 포인트 & 가이드", font=f_pret_28, fill=(25, 30, 45), anchor="lt")
         pts = highlight.summary_points if highlight.summary_points else [f"{highlight.title} 핵심 설정", "추천 활용법"]
-        draw.text((wx1 + 55, sub_box_y + 80), f"• {pts[0][:34]}", font=f_pret_28, fill=(50, 55, 70), anchor="lt")
+        draw.text((wx1 + 55, tip_y + 64), f"• {pts[0][:34]}", font=f_pret_28, fill=(50, 55, 70), anchor="lt")
         p2 = pts[1] if len(pts) > 1 else highlight.title
-        draw.text((wx1 + 55, sub_box_y + 120), f"• {p2[:34]}", font=f_pret_22, fill=(100, 105, 120), anchor="lt")
+        draw.text((wx1 + 55, tip_y + 98), f"• {p2[:34]}", font=f_pret_22, fill=(100, 105, 120), anchor="lt")
 
         # Window Hashtag Chips
-        chip_y = sub_box_y + 185
+        chip_y = tip_y + 160
         chips = [f"#{w}" for w in highlight.title.split() if len(w) > 1]
         if len(chips) < 3:
             chips += ["#핵심가이드", "#추천팁", "#쇼츠꿀팁"]
@@ -317,18 +384,23 @@ def render_template_background(
         draw.rounded_rectangle([vx + vw - 220, vy + 20, vx + vw - 20, vy + 68], radius=12, fill=(255, 45, 85, 240))
         draw.text((vx + vw - 120, vy + 44), "HOT 필수시청", font=f_pret_28, fill=(255, 255, 255), anchor="mm")
 
+        # Dedicated Glowing Subtitle Slot
+        draw.rounded_rectangle([80, 940, canvas_w - 80, 1095], radius=20, fill=(18, 22, 32, 230), outline=(0, 255, 220, 90), width=2)
+        draw.text((540, 965), "⚡ KEY INSIGHT", font=f_pret_22, fill=(0, 255, 220), anchor="mm")
+
         # Bottom Summary Point Card
-        sc_y = 1170
-        draw.rounded_rectangle([80, sc_y, canvas_w - 80, sc_y + 240], radius=22, fill=(22, 26, 38, 240), outline=(255, 255, 255, 40), width=2)
-        draw.text((120, sc_y + 40), "[요약] 실전 핵심 가이드", font=f_pret_36, fill=(255, 215, 0), anchor="lt")
+        sc_y = 1135
+        draw.rounded_rectangle([80, sc_y, canvas_w - 80, sc_y + 250], radius=22, fill=(22, 26, 38, 240), outline=(255, 255, 255, 40), width=2)
+        draw.text((120, sc_y + 35), "[요약] 실전 핵심 가이드", font=f_pret_36, fill=(255, 215, 0), anchor="lt")
         pts = highlight.summary_points if highlight.summary_points else [
             f"{highlight.title} 실전 핵심 설정",
             "상황별 권장 사용 가이드"
         ]
         p1 = f"• {pts[0]}"
         p2 = f"• {pts[1]}" if len(pts) > 1 else f"• {highlight.title} 실전 활용 팁"
-        draw.text((120, sc_y + 100), p1[:38], font=f_pret_28, fill=(235, 240, 255), anchor="lt")
+        draw.text((120, sc_y + 95), p1[:38], font=f_pret_28, fill=(235, 240, 255), anchor="lt")
         draw.text((120, sc_y + 155), p2[:38], font=f_pret_28, fill=(235, 240, 255), anchor="lt")
+        draw.text((120, sc_y + 205), "• 전체 핵심 내용은 상단 링크에서 바로 확인하세요", font=f_pret_22, fill=(140, 150, 175), anchor="lt")
 
     # =========================================================================
     # 4. MESSENGER CHAT (카카오톡 / DM 대화 & 썰풀이)
@@ -386,16 +458,21 @@ def render_template_background(
         draw.rounded_rectangle([vx - 6, vy - 6, vx + vw + 6, vy + vh + 6], radius=24, fill=(255, 120, 0, 240))
         draw.rectangle([vx, vy, vx + vw, vy + vh], fill=(0, 0, 0))
 
-        # Bottom Ranking Specs Card
-        sc_y = vy + vh + 40
-        draw.rounded_rectangle([70, sc_y, canvas_w - 70, sc_y + 260], radius=24, fill=(30, 25, 42), outline=(255, 140, 0, 100), width=2)
-        draw.rounded_rectangle([100, sc_y + 25, 260, sc_y + 70], radius=12, fill=(255, 140, 0))
-        draw.text((180, sc_y + 48), "🔥 실시간 1위", font=f_pret_28, fill=(255, 255, 255), anchor="mm")
+        # Bottom Ranking Specs Card with Dedicated Subtitle Slot
+        sc_y = vy + vh + 35
+        draw.rounded_rectangle([70, sc_y, canvas_w - 70, sc_y + 370], radius=24, fill=(30, 25, 42), outline=(255, 140, 0, 100), width=2)
+        draw.rounded_rectangle([100, sc_y + 22, 280, sc_y + 66], radius=12, fill=(255, 140, 0))
+        draw.text((190, sc_y + 44), "🔥 실시간 1위", font=f_pret_28, fill=(255, 255, 255), anchor="mm")
 
+        # Subtitle slot background pill
+        draw.rounded_rectangle([95, sc_y + 80, canvas_w - 95, sc_y + 195], radius=16, fill=(18, 15, 26), outline=(255, 140, 0, 80), width=1)
+
+        # Summary bullet points placed below subtitle slot
         pts = highlight.summary_points if highlight.summary_points else [f"{highlight.title} 핵심 포인트", "절대 놓치면 안 되는 이유"]
-        draw.text((100, sc_y + 105), f"🥇 1위 선정 이유: {pts[0][:32]}", font=f_pret_28, fill=(245, 245, 255), anchor="lt")
+        draw.text((100, sc_y + 225), f"🥇 1위 선정 이유: {pts[0][:32]}", font=f_pret_28, fill=(245, 245, 255), anchor="lt")
         p2 = pts[1] if len(pts) > 1 else highlight.title
-        draw.text((100, sc_y + 160), f"⚡ 체크 포인트: {p2[:32]}", font=f_pret_28, fill=(245, 245, 255), anchor="lt")
+        draw.text((100, sc_y + 285), f"⚡ 체크 포인트: {p2[:32]}", font=f_pret_28, fill=(245, 245, 255), anchor="lt")
+        draw.text((100, sc_y + 335), "• 다음 순위 영상은 채널에서 바로 확인 가능합니다", font=f_pret_22, fill=(160, 150, 180), anchor="lt")
 
     # =========================================================================
     # 6. PRODUCT REVIEW (5성 별점 & 내돈내산 리뷰)
@@ -422,16 +499,21 @@ def render_template_background(
         draw.rounded_rectangle([vx - 4, vy - 4, vx + vw + 4, vy + vh + 4], radius=24, fill=(20, 30, 40))
         draw.rectangle([vx, vy, vx + vw, vy + vh], fill=(0, 0, 0))
 
-        # Bottom Pros/Cons Card
+        # Bottom Pros/Cons Card with Dedicated Subtitle Slot
         sc_y = vy + vh + 35
-        draw.rounded_rectangle([70, sc_y, canvas_w - 70, sc_y + 280], radius=24, fill=(255, 255, 255), outline=(210, 225, 235), width=2)
-        draw.rounded_rectangle([100, sc_y + 25, 300, sc_y + 70], radius=12, fill=(0, 200, 140))
-        draw.text((200, sc_y + 48), "내돈내산 솔직 평가", font=f_pret_28, fill=(255, 255, 255), anchor="mm")
+        draw.rounded_rectangle([70, sc_y, canvas_w - 70, sc_y + 370], radius=24, fill=(255, 255, 255), outline=(210, 225, 235), width=2)
+        draw.rounded_rectangle([100, sc_y + 22, 320, sc_y + 66], radius=12, fill=(0, 200, 140))
+        draw.text((210, sc_y + 44), "내돈내산 솔직 평가", font=f_pret_28, fill=(255, 255, 255), anchor="mm")
 
+        # Subtitle slot background pill
+        draw.rounded_rectangle([95, sc_y + 80, canvas_w - 95, sc_y + 195], radius=16, fill=(240, 245, 248), outline=(0, 200, 140, 90), width=1)
+
+        # Summary bullet points placed below subtitle slot
         pts = highlight.summary_points if highlight.summary_points else [f"{highlight.title} 실전 장점", "주의할 점 및 추천 대상"]
-        draw.text((100, sc_y + 105), f"✔ 추천 포인트: {pts[0][:32]}", font=f_pret_28, fill=(30, 40, 50), anchor="lt")
+        draw.text((100, sc_y + 225), f"✔ 추천 포인트: {pts[0][:32]}", font=f_pret_28, fill=(30, 40, 50), anchor="lt")
         p2 = pts[1] if len(pts) > 1 else highlight.title
-        draw.text((100, sc_y + 165), f"💡 구매 전 체크: {p2[:32]}", font=f_pret_28, fill=(30, 40, 50), anchor="lt")
+        draw.text((100, sc_y + 285), f"💡 구매 전 체크: {p2[:32]}", font=f_pret_28, fill=(30, 40, 50), anchor="lt")
+        draw.text((100, sc_y + 335), "• 실사용자 평점 및 실시간 최저가는 본문 링크 참고", font=f_pret_22, fill=(120, 135, 145), anchor="lt")
 
     # =========================================================================
     # 7. MOTIVATION QUOTE (명언 & 동기부여 블랙 매거진)
@@ -452,14 +534,20 @@ def render_template_background(
         draw.rounded_rectangle([vx - 4, vy - 4, vx + vw + 4, vy + vh + 4], radius=20, fill=(245, 200, 80, 200))
         draw.rectangle([vx, vy, vx + vw, vy + vh], fill=(0, 0, 0))
 
-        # Bottom Wisdom Reflection Card
-        sc_y = vy + vh + 45
-        draw.rounded_rectangle([80, sc_y, canvas_w - 80, sc_y + 240], radius=24, fill=(20, 20, 26), outline=(245, 200, 80, 80), width=1)
-        draw.text((540, sc_y + 50), "오늘의 인생 인사이트", font=f_pret_36, fill=(245, 200, 80), anchor="mm")
+        # Bottom Wisdom Reflection Card with Dedicated Subtitle Slot
+        sc_y = vy + vh + 35
+        draw.rounded_rectangle([80, sc_y, canvas_w - 80, sc_y + 370], radius=24, fill=(20, 20, 26), outline=(245, 200, 80, 80), width=1)
+        draw.text((540, sc_y + 38), "✦ 오늘의 인생 인사이트 ✦", font=f_pret_36, fill=(245, 200, 80), anchor="mm")
+
+        # Subtitle slot background pill
+        draw.rounded_rectangle([95, sc_y + 75, canvas_w - 95, sc_y + 190], radius=16, fill=(16, 16, 22), outline=(245, 200, 80, 70), width=1)
+
+        # Reflection text placed below subtitle slot
         pts = highlight.summary_points if highlight.summary_points else [highlight.title, "매일 실천하는 마인드셋"]
-        draw.text((540, sc_y + 115), pts[0][:36], font=f_pret_28, fill=(220, 225, 235), anchor="mm")
+        draw.text((540, sc_y + 235), pts[0][:36], font=f_pret_28, fill=(220, 225, 235), anchor="mm")
         p2 = pts[1] if len(pts) > 1 else "지금 바로 저장하고 반복해 보세요"
-        draw.text((540, sc_y + 170), p2[:36], font=f_pret_28, fill=(160, 165, 180), anchor="mm")
+        draw.text((540, sc_y + 295), p2[:36], font=f_pret_28, fill=(160, 165, 180), anchor="mm")
+        draw.text((540, sc_y + 340), "지금 바로 저장하고 매일 아침 되새겨 보세요", font=f_pret_22, fill=(120, 125, 140), anchor="mm")
 
     # =========================================================================
     # 8. QUIZ & BALANCE GAME (A vs B 밸런스 게임)
@@ -481,17 +569,23 @@ def render_template_background(
         draw.rounded_rectangle([vx - 4, vy - 4, vx + vw + 4, vy + vh + 4], radius=20, fill=(255, 60, 80))
         draw.rectangle([vx, vy, vx + vw, vy + vh], fill=(0, 0, 0))
 
-        # Bottom A vs B Vote Card
-        sc_y = vy + vh + 35
+        # Dedicated Subtitle Banner Slot directly under video
+        draw.rounded_rectangle([70, 1005, canvas_w - 70, 1120], radius=18, fill=(16, 14, 24), outline=(255, 60, 80, 120), width=2)
+        draw.text((540, 1030), "💬 실시간 시청자 토론", font=f_pret_22, fill=(255, 180, 190), anchor="mm")
+
+        # Bottom A vs B Vote Card (Placed BELOW subtitle slot)
+        box_y = 1150
         # Box A (Blue)
-        draw.rounded_rectangle([80, sc_y, 520, sc_y + 240], radius=20, fill=(30, 60, 140), outline=(80, 130, 255), width=2)
-        draw.text((300, sc_y + 60), "옵션 A", font=f_pret_36, fill=(255, 255, 255), anchor="mm")
-        draw.text((300, sc_y + 130), "댓글로 A 투표!", font=f_pret_28, fill=(200, 220, 255), anchor="mm")
+        draw.rounded_rectangle([70, box_y, 520, box_y + 250], radius=20, fill=(25, 50, 120), outline=(80, 130, 255), width=2)
+        draw.text((295, box_y + 60), "옵션 A", font=f_pret_36, fill=(255, 255, 255), anchor="mm")
+        draw.text((295, box_y + 130), "댓글로 A 투표!", font=f_pret_28, fill=(200, 220, 255), anchor="mm")
+        draw.text((295, box_y + 195), "선택 비율 54%", font=f_pret_28, fill=(140, 200, 255), anchor="mm")
 
         # Box B (Red)
-        draw.rounded_rectangle([560, sc_y, 1000, sc_y + 240], radius=20, fill=(140, 30, 50), outline=(255, 80, 100), width=2)
-        draw.text((780, sc_y + 60), "옵션 B", font=f_pret_36, fill=(255, 255, 255), anchor="mm")
-        draw.text((780, sc_y + 130), "댓글로 B 투표!", font=f_pret_28, fill=(255, 200, 210), anchor="mm")
+        draw.rounded_rectangle([560, box_y, 1010, box_y + 250], radius=20, fill=(120, 25, 45), outline=(255, 80, 100), width=2)
+        draw.text((785, box_y + 60), "옵션 B", font=f_pret_36, fill=(255, 255, 255), anchor="mm")
+        draw.text((785, box_y + 130), "댓글로 B 투표!", font=f_pret_28, fill=(255, 200, 210), anchor="mm")
+        draw.text((785, box_y + 195), "선택 비율 46%", font=f_pret_28, fill=(255, 170, 180), anchor="mm")
 
     # =========================================================================
     # 9. VLOG POLAROID (인스타 감성 폴라로이드)
@@ -510,17 +604,24 @@ def render_template_background(
 
         # Polaroid White Paper Card Frame (holds the video)
         vx, vy, vw, vh = template.video_box
-        draw.rounded_rectangle([vx - 25, vy - 25, vx + vw + 25, vy + vh + 120], radius=16, fill=(255, 255, 255), outline=(215, 210, 200), width=2)
+        draw.rounded_rectangle([vx - 25, vy - 25, vx + vw + 25, vy + vh + 85], radius=16, fill=(255, 255, 255), outline=(215, 210, 200), width=2)
         draw.rectangle([vx, vy, vx + vw, vy + vh], fill=(0, 0, 0))
         # Polaroid bottom caption note
-        draw.text((vx + 20, vy + vh + 50), f"MEMORIES  #{highlight.id:02d}  •  {highlight.title[:24]}", font=f_pret_28, fill=(100, 90, 80), anchor="lm")
+        draw.text((vx + 20, vy + vh + 45), f"MEMORIES  #{highlight.id:02d}  •  {highlight.title[:24]}", font=f_pret_28, fill=(100, 90, 80), anchor="lm")
 
-        # Bottom Journal Note
-        sc_y = vy + vh + 160
-        draw.rounded_rectangle([80, sc_y, canvas_w - 80, sc_y + 200], radius=20, fill=(255, 255, 255, 200), outline=(215, 210, 200), width=1)
-        draw.text((120, sc_y + 40), "오늘의 한 줄 기록", font=f_pret_28, fill=(120, 105, 95), anchor="lt")
+        # Bottom Journal Note with Dedicated Subtitle Slot
+        sc_y = 1040
+        draw.rounded_rectangle([80, sc_y, canvas_w - 80, sc_y + 360], radius=20, fill=(255, 255, 255, 200), outline=(215, 210, 200), width=1)
+        draw.text((120, sc_y + 28), "오늘의 감성 기록", font=f_pret_28, fill=(120, 105, 95), anchor="lt")
+
+        # Subtitle slot background pill
+        draw.rounded_rectangle([95, sc_y + 65, canvas_w - 95, sc_y + 180], radius=16, fill=(248, 244, 236), outline=(215, 210, 200), width=1)
+
         pts = highlight.summary_points if highlight.summary_points else [highlight.title]
-        draw.text((120, sc_y + 90), f"• {pts[0][:36]}", font=f_pret_28, fill=(60, 50, 40), anchor="lt")
+        draw.text((120, sc_y + 215), f"• {pts[0][:36]}", font=f_pret_28, fill=(60, 50, 40), anchor="lt")
+        p2 = pts[1] if len(pts) > 1 else "소중한 순간을 영상으로 기록합니다"
+        draw.text((120, sc_y + 270), f"• {p2[:36]}", font=f_pret_28, fill=(90, 80, 70), anchor="lt")
+        draw.text((120, sc_y + 320), "• [VLOG] 감성 일상 쇼츠 시리즈 연재 중", font=f_pret_22, fill=(140, 130, 120), anchor="lt")
 
     # =========================================================================
     # 10. FACETIME CALL (아이폰 화상통화 / FaceTime UI)
@@ -612,8 +713,11 @@ def render_template_background(
         draw.rounded_rectangle([vx - 4, vy - 4, vx + vw + 4, vy + vh + 4], radius=20, fill=(255, 255, 255), outline=(220, 222, 230), width=2)
         draw.rectangle([vx, vy, vx + vw, vy + vh], fill=(0, 0, 0))
 
-        # Bottom iOS Action Sheet / Alert Dialog (Classic Meme format)
-        dy = vy + vh + 40
+        # Dedicated Subtitle Slot Banner
+        draw.rounded_rectangle([80, 1305, canvas_w - 80, 1425], radius=18, fill=(235, 238, 245), outline=(210, 215, 225), width=1)
+
+        # Bottom iOS Action Sheet / Alert Dialog (Classic Meme format placed below subtitle)
+        dy = 1460
         draw.rounded_rectangle([100, dy, canvas_w - 100, dy + 220], radius=24, fill=(255, 255, 255), outline=(210, 215, 225), width=2)
         draw.text((540, dy + 50), "이 사진이 모든 기기의 갤러리에서 삭제됩니다.", font=f_pret_28, fill=(30, 35, 45), anchor="mm")
         draw.line([(100, dy + 95), (canvas_w - 100, dy + 95)], fill=(230, 232, 240), width=1)
@@ -636,15 +740,20 @@ def render_template_background(
         draw.rounded_rectangle([vx - 6, vy - 6, vx + vw + 6, vy + vh + 6], radius=16, fill=(20, 20, 25))
         draw.rectangle([vx, vy, vx + vw, vy + vh], fill=(0, 0, 0))
 
-        # Bottom Webtoon Reaction Deck
-        by = vy + vh + 40
-        draw.rounded_rectangle([70, by, canvas_w - 70, by + 280], radius=24, fill=(255, 255, 255), outline=(20, 20, 25), width=4)
-        draw.rounded_rectangle([100, by + 30, 320, by + 75], radius=12, fill=(20, 20, 25))
-        draw.text((210, by + 52), "💬 실시간 베댓 1위", font=f_pret_28, fill=(255, 235, 80), anchor="mm")
+        # Bottom Webtoon Reaction Deck with Dedicated Subtitle Slot
+        by = vy + vh + 30
+        draw.rounded_rectangle([70, by, canvas_w - 70, by + 370], radius=24, fill=(255, 255, 255), outline=(20, 20, 25), width=4)
+        draw.rounded_rectangle([100, by + 22, 330, by + 66], radius=12, fill=(20, 20, 25))
+        draw.text((215, by + 44), "💬 실시간 베댓 1위", font=f_pret_28, fill=(255, 235, 80), anchor="mm")
+
+        # Subtitle slot background pill
+        draw.rounded_rectangle([95, by + 80, canvas_w - 95, by + 195], radius=16, fill=(250, 248, 238), outline=(20, 20, 25), width=2)
+
         pts = highlight.summary_points if highlight.summary_points else [highlight.title, "ㅋㅋㅋ 댓글 보고 인정함"]
-        draw.text((100, by + 120), f"\" {pts[0][:34]} \"", font=f_pret_36, fill=(20, 20, 25), anchor="lt")
+        draw.text((100, by + 225), f"\" {pts[0][:34]} \"", font=f_pret_36, fill=(20, 20, 25), anchor="lt")
         p2 = pts[1] if len(pts) > 1 else "이거 나만 지금 알았냐 ㅋㅋㅋ"
-        draw.text((100, by + 185), f"▶ {p2[:36]}", font=f_pret_28, fill=(80, 85, 95), anchor="lt")
+        draw.text((100, by + 290), f"▶ {p2[:36]}", font=f_pret_28, fill=(80, 85, 95), anchor="lt")
+        draw.text((100, by + 335), "👍 4.8천개  •  답글 284개  •  공유하기", font=f_pret_22, fill=(120, 125, 135), anchor="lt")
 
     # =========================================================================
     # 14. CINEMA PREVIEW (금주 개봉작 시네마틱 필름 티켓)
@@ -667,14 +776,19 @@ def render_template_background(
         draw.rounded_rectangle([vx - 4, vy - 4, vx + vw + 4, vy + vh + 4], radius=16, fill=(245, 210, 110, 180))
         draw.rectangle([vx, vy, vx + vw, vy + vh], fill=(0, 0, 0))
 
-        # Bottom Film Synopsis Card
-        by = vy + vh + 40
-        draw.rounded_rectangle([80, by, canvas_w - 80, by + 260], radius=24, fill=(24, 26, 36), outline=(255, 255, 255, 30), width=1)
-        draw.text((120, by + 45), "[화제작 프리뷰]", font=f_pret_36, fill=(245, 210, 110), anchor="lt")
+        # Bottom Film Synopsis Card with Dedicated Subtitle Slot
+        by = vy + vh + 35
+        draw.rounded_rectangle([70, by, canvas_w - 70, by + 370], radius=24, fill=(24, 26, 36), outline=(245, 210, 110, 80), width=1)
+        draw.text((110, by + 38), "[화제작 시네마 프리뷰]", font=f_pret_36, fill=(245, 210, 110), anchor="lt")
+
+        # Subtitle slot background pill
+        draw.rounded_rectangle([95, by + 75, canvas_w - 95, by + 190], radius=16, fill=(15, 17, 24), outline=(245, 210, 110, 60), width=1)
+
         pts = highlight.summary_points if highlight.summary_points else [highlight.title, "놓치면 안 될 명장면"]
-        draw.text((120, by + 110), f"• 감상 포인트: {pts[0][:32]}", font=f_pret_28, fill=(230, 235, 245), anchor="lt")
+        draw.text((110, by + 225), f"• 감상 포인트: {pts[0][:32]}", font=f_pret_28, fill=(230, 235, 245), anchor="lt")
         p2 = pts[1] if len(pts) > 1 else highlight.title
-        draw.text((120, by + 170), f"• 주요 특징: {p2[:32]}", font=f_pret_28, fill=(180, 190, 205), anchor="lt")
+        draw.text((110, by + 285), f"• 주요 특징: {p2[:32]}", font=f_pret_28, fill=(180, 190, 205), anchor="lt")
+        draw.text((110, by + 335), "• 극장 개봉 및 OTT 스트리밍 일정 채널 커뮤니티 확인", font=f_pret_22, fill=(130, 140, 155), anchor="lt")
 
     # =========================================================================
     # 15. PIE CHART REACTION (흔한 팬의 일상.. 분노·답답함 99% 원형 차트)
@@ -694,23 +808,27 @@ def render_template_background(
         draw.rounded_rectangle([vx - 4, vy - 4, vx + vw + 4, vy + vh + 4], radius=20, fill=(255, 70, 70))
         draw.rectangle([vx, vy, vx + vw, vy + vh], fill=(0, 0, 0))
 
-        # Bottom Statistics Deck
-        by = vy + vh + 35
-        draw.rounded_rectangle([70, by, canvas_w - 70, by + 280], radius=24, fill=(28, 32, 48), outline=(255, 80, 80, 80), width=2)
+        # Bottom Statistics Deck with Dedicated Subtitle Slot
+        by = vy + vh + 30
+        draw.rounded_rectangle([70, by, canvas_w - 70, by + 380], radius=24, fill=(28, 32, 48), outline=(255, 80, 80, 80), width=2)
         # Stats Badges
-        draw.rounded_rectangle([100, by + 30, 280, by + 85], radius=12, fill=(235, 50, 50))
-        draw.text((190, by + 57), "답답함 45%", font=f_pret_28, fill=(255, 255, 255), anchor="mm")
-        draw.rounded_rectangle([310, by + 30, 490, by + 85], radius=12, fill=(255, 130, 0))
-        draw.text((400, by + 57), "분노 35%", font=f_pret_28, fill=(255, 255, 255), anchor="mm")
-        draw.rounded_rectangle([520, by + 30, 700, by + 85], radius=12, fill=(255, 200, 0))
-        draw.text((610, by + 57), "화병 19%", font=f_pret_28, fill=(20, 20, 20), anchor="mm")
-        draw.rounded_rectangle([730, by + 30, 910, by + 85], radius=12, fill=(50, 200, 120))
-        draw.text((820, by + 57), "이성 1%", font=f_pret_28, fill=(20, 20, 20), anchor="mm")
+        draw.rounded_rectangle([100, by + 20, 280, by + 68], radius=12, fill=(235, 50, 50))
+        draw.text((190, by + 44), "답답함 45%", font=f_pret_28, fill=(255, 255, 255), anchor="mm")
+        draw.rounded_rectangle([310, by + 20, 490, by + 68], radius=12, fill=(255, 130, 0))
+        draw.text((400, by + 44), "분노 35%", font=f_pret_28, fill=(255, 255, 255), anchor="mm")
+        draw.rounded_rectangle([520, by + 20, 700, by + 68], radius=12, fill=(255, 200, 0))
+        draw.text((610, by + 44), "화병 19%", font=f_pret_28, fill=(20, 20, 20), anchor="mm")
+        draw.rounded_rectangle([730, by + 20, 910, by + 68], radius=12, fill=(50, 200, 120))
+        draw.text((820, by + 44), "이성 1%", font=f_pret_28, fill=(20, 20, 20), anchor="mm")
+
+        # Subtitle slot background pill
+        draw.rounded_rectangle([95, by + 85, canvas_w - 95, by + 200], radius=16, fill=(18, 20, 32), outline=(255, 80, 80, 60), width=1)
 
         pts = highlight.summary_points if highlight.summary_points else [highlight.title, "100% 실화... 내 모습인 줄 알았다"]
-        draw.text((100, by + 130), f"\" {pts[0][:32]} \"", font=f_pret_36, fill=(255, 255, 255), anchor="lt")
+        draw.text((100, by + 235), f"\" {pts[0][:32]} \"", font=f_pret_36, fill=(255, 255, 255), anchor="lt")
         p2 = pts[1] if len(pts) > 1 else "공감되면 좋아요와 댓글 남겨주세요!"
-        draw.text((100, by + 195), f"• {p2[:36]}", font=f_pret_28, fill=(200, 210, 230), anchor="lt")
+        draw.text((100, by + 300), f"• {p2[:36]}", font=f_pret_28, fill=(200, 210, 230), anchor="lt")
+        draw.text((100, by + 345), "• 공감되면 좋아요와 댓글 남겨주세요!", font=f_pret_22, fill=(150, 160, 180), anchor="lt")
 
     # =========================================================================
     # 16. CHALLENGE FITNESS (오운완 챌린지 & 운동 루틴 미션)
@@ -730,15 +848,20 @@ def render_template_background(
         draw.rounded_rectangle([vx - 6, vy - 6, vx + vw + 6, vy + vh + 6], radius=24, fill=(255, 50, 50))
         draw.rectangle([vx, vy, vx + vw, vy + vh], fill=(0, 0, 0))
 
-        # Bottom Mission Checklist Card
-        by = vy + vh + 35
-        draw.rounded_rectangle([70, by, canvas_w - 70, by + 260], radius=24, fill=(30, 22, 32), outline=(255, 60, 60, 100), width=2)
-        draw.rounded_rectangle([100, by + 25, 300, by + 70], radius=12, fill=(255, 45, 45))
-        draw.text((200, by + 48), "오늘의 루틴 미션", font=f_pret_28, fill=(255, 255, 255), anchor="mm")
+        # Bottom Mission Checklist Card with Dedicated Subtitle Slot
+        by = vy + vh + 30
+        draw.rounded_rectangle([70, by, canvas_w - 70, by + 370], radius=24, fill=(30, 22, 32), outline=(255, 60, 60, 100), width=2)
+        draw.rounded_rectangle([100, by + 22, 310, by + 66], radius=12, fill=(255, 45, 45))
+        draw.text((205, by + 44), "오늘의 루틴 미션", font=f_pret_28, fill=(255, 255, 255), anchor="mm")
+
+        # Subtitle slot background pill
+        draw.rounded_rectangle([95, by + 80, canvas_w - 95, by + 195], radius=16, fill=(18, 14, 22), outline=(255, 60, 60, 70), width=1)
+
         pts = highlight.summary_points if highlight.summary_points else [f"{highlight.title} 실전 루틴", "매일 꾸준히 반복하기"]
-        draw.text((100, by + 105), f"✔ 미션 1: {pts[0][:32]}", font=f_pret_28, fill=(255, 245, 245), anchor="lt")
+        draw.text((100, by + 225), f"✔ 미션 1: {pts[0][:32]}", font=f_pret_28, fill=(255, 245, 245), anchor="lt")
         p2 = pts[1] if len(pts) > 1 else highlight.title
-        draw.text((100, by + 165), f"🔥 미션 2: {p2[:32]}", font=f_pret_28, fill=(255, 245, 245), anchor="lt")
+        draw.text((100, by + 285), f"🔥 미션 2: {p2[:32]}", font=f_pret_28, fill=(255, 245, 245), anchor="lt")
+        draw.text((100, by + 335), "• 오운완 인증하고 오늘 하루도 갓생 완성!", font=f_pret_22, fill=(200, 170, 180), anchor="lt")
 
     # =========================================================================
     # 17. MINIMAL EDU (캔바 모던 클린 교육)
@@ -764,18 +887,23 @@ def render_template_background(
         vx, vy, vw, vh = template.video_box
         draw.rounded_rectangle([vx - 3, vy - 3, vx + vw + 3, vy + vh + 3], radius=16, fill=(0, 0, 0))
 
-        # Bottom Knowledge Card
-        sc_y = 1200
-        draw.rounded_rectangle([80, sc_y, canvas_w - 80, sc_y + 220], radius=20, fill=(28, 34, 48), outline=(60, 72, 95), width=2)
-        draw.text((120, sc_y + 35), "[노트] 핵심 지식 정리", font=f_pret_36, fill=(255, 255, 255), anchor="lt")
+        # Bottom Knowledge Card with Dedicated Subtitle Slot
+        sc_y = 1000
+        draw.rounded_rectangle([70, sc_y, canvas_w - 70, sc_y + 370], radius=20, fill=(28, 34, 48), outline=(60, 72, 95), width=2)
+        draw.text((110, sc_y + 35), "[노트] 핵심 지식 정리", font=f_pret_36, fill=(255, 255, 255), anchor="lt")
+
+        # Subtitle slot background pill
+        draw.rounded_rectangle([95, sc_y + 75, canvas_w - 95, sc_y + 190], radius=16, fill=(18, 22, 32), outline=(60, 75, 105), width=1)
+
         pts = highlight.summary_points if highlight.summary_points else [
             f"{highlight.title} 실전 핵심 가이드",
             "상황별 권장 사용법 정리"
         ]
         p1 = f"• {pts[0]}"
         p2 = f"• {pts[1]}" if len(pts) > 1 else f"• {highlight.title} 실전 활용 팁"
-        draw.text((120, sc_y + 95), p1[:38], font=f_pret_28, fill=(210, 220, 235), anchor="lt")
-        draw.text((120, sc_y + 145), p2[:38], font=f_pret_28, fill=(180, 195, 215), anchor="lt")
+        draw.text((110, sc_y + 225), p1[:38], font=f_pret_28, fill=(210, 220, 235), anchor="lt")
+        draw.text((110, sc_y + 285), p2[:38], font=f_pret_28, fill=(180, 195, 215), anchor="lt")
+        draw.text((110, sc_y + 335), "• [지식 보관소] 유익했다면 저장하고 친구에게 공유하세요", font=f_pret_22, fill=(130, 145, 165), anchor="lt")
 
     # =========================================================================
     # 20. VLOG STICKER LIFESTYLE (나를 바꾼 습관 3가지 & 감성 3D 스티커)
@@ -797,16 +925,21 @@ def render_template_background(
         draw.text((540, 215), f"★  {line1[:16]}  ★", font=f_pret_50, fill=(255, 255, 255), stroke_width=4, stroke_fill=(15, 20, 25), anchor="mm")
         draw.text((540, 295), line2[:18], font=f_black_72, fill=(232, 255, 130), stroke_width=6, stroke_fill=(20, 30, 15), anchor="mm")
 
-        # Floating 3D Stickers
+        # Floating 3D Stickers (Clean Styled Badges)
         # 1. Coffee cup sticker (left)
-        draw.ellipse([70, 340, 190, 460], fill=(255, 255, 255, 245), outline=(230, 235, 245), width=3)
-        draw.text((130, 400), "☕", font=f_pret_50, anchor="mm")
+        draw_card_with_shadow(img, [60, 360, 230, 430], radius=20, fill=(255, 250, 240, 245), outline=(230, 215, 195, 255), shadow_blur=12, shadow_offset=(0, 6), shadow_color=(0, 0, 0, 50))
+        draw = ImageDraw.Draw(img)
+        draw.text((145, 395), "☕ COFFEE", font=f_pret_22, fill=(120, 80, 50), anchor="mm")
+
         # 2. Yoga bubble sticker (right)
-        draw.rounded_rectangle([canvas_w - 210, 320, canvas_w - 70, 450], radius=28, fill=(255, 255, 255, 245), outline=(245, 220, 235), width=3)
-        draw.text((canvas_w - 140, 385), "🧘‍♀️", font=f_pret_50, anchor="mm")
+        draw_card_with_shadow(img, [canvas_w - 230, 350, canvas_w - 60, 420], radius=20, fill=(248, 238, 255, 245), outline=(225, 210, 245, 255), shadow_blur=12, shadow_offset=(0, 6), shadow_color=(0, 0, 0, 50))
+        draw = ImageDraw.Draw(img)
+        draw.text((canvas_w - 145, 385), "🧘 REST", font=f_pret_22, fill=(110, 60, 160), anchor="mm")
+
         # 3. Plant sticker (bottom right)
-        draw.ellipse([canvas_w - 180, 1350, canvas_w - 80, 1450], fill=(255, 255, 255, 235))
-        draw.text((canvas_w - 130, 1400), "🌱", font=f_pret_50, anchor="mm")
+        draw_card_with_shadow(img, [canvas_w - 230, 1370, canvas_w - 60, 1440], radius=20, fill=(235, 255, 240, 245), outline=(200, 240, 210, 255), shadow_blur=12, shadow_offset=(0, 6), shadow_color=(0, 0, 0, 50))
+        draw = ImageDraw.Draw(img)
+        draw.text((canvas_w - 145, 1405), "🌿 HABIT", font=f_pret_22, fill=(35, 120, 55), anchor="mm")
 
     # =========================================================================
     # 21. VLOG MONEY SALARY (프리랜서 평균 수입 & 테이프 스티커)
@@ -835,9 +968,10 @@ def render_template_background(
         draw.rounded_rectangle([530, 415, 980, 490], radius=8, fill=(255, 245, 180, 245), outline=(235, 215, 130), width=2)
         draw.text((755, 452), "꾸준히 일 받는 법", font=f_pret_36, fill=(95, 75, 10), anchor="mm")
 
-        # Flying Money 💸
-        draw.text((890, 240), "💸", font=f_pret_50, anchor="mm")
-        draw.text((110, 510), "💸", font=f_pret_50, anchor="mm")
+        # Golden Revenue Badge
+        draw_card_with_shadow(img, [canvas_w - 240, 210, canvas_w - 60, 275], radius=16, fill=(255, 235, 120, 245), outline=(235, 205, 50, 255), shadow_blur=10, shadow_offset=(0, 5), shadow_color=(0, 0, 0, 50))
+        draw = ImageDraw.Draw(img)
+        draw.text((canvas_w - 150, 242), "$$$ REVENUE", font=f_pret_22, fill=(120, 90, 10), anchor="mm")
 
         # Bottom Creator Watermark
         draw.text((540, 1820), "@designer.miri  •  실시간 VLOG", font=f_pret_22, fill=(255, 255, 255, 190), anchor="mm")
@@ -849,36 +983,35 @@ def render_template_background(
         img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
 
-        # Top Bar
+        # Top Bar & Brand Logo
         draw.text((70, 75), "MIRIGYM", font=f_black_58, fill=(235, 30, 45), anchor="lm")
         draw.ellipse([canvas_w - 180, 50, canvas_w - 130, 100], outline=(255, 255, 255, 200), width=2)
         draw.text((canvas_w - 155, 75), "+", font=f_pret_36, fill=(255, 255, 255), anchor="mm")
         draw.ellipse([canvas_w - 110, 50, canvas_w - 60, 100], outline=(255, 255, 255, 200), width=2)
         draw.text((canvas_w - 85, 75), "♡", font=f_pret_28, fill=(255, 255, 255), anchor="mm")
 
+        # Top Header Title (Relocated to top for clean poster look)
+        draw.text((70, 145), "미리짐 오운완 챌린지", font=f_black_58, fill=(255, 255, 255), anchor="lt")
+        draw.text((70, 220), "선착순 특별 이벤트!", font=f_pret_36, fill=(255, 220, 0), anchor="lt")
+
         # Bottom Cinematic Dark Gradient
-        for y in range(850, canvas_h):
-            alpha = int(225 * ((y - 850) / (canvas_h - 850)))
+        for y in range(1200, canvas_h):
+            alpha = int(225 * ((y - 1200) / (canvas_h - 1200)))
             draw.line([(0, y), (canvas_w, y)], fill=(5, 8, 14, alpha))
 
-        # Huge Bold Title (Lower Middle)
-        draw.text((80, 960), "미리짐", font=f_black_72, fill=(255, 255, 255), anchor="lt")
-        draw.text((80, 1055), "오운완 챌린지", font=f_black_72, fill=(255, 255, 255), anchor="lt")
-        draw.text((80, 1150), "이벤트", font=f_black_72, fill=(255, 255, 255), anchor="lt")
-
-        # Red CTA Button & Date
-        draw.rounded_rectangle([80, 1260, 320, 1335], radius=12, fill=(235, 25, 45))
-        draw.text((200, 1297), "▶ 참여방법", font=f_pret_36, fill=(255, 255, 255), anchor="mm")
-        draw.text((360, 1297), "한 달간 선착순 특별 혜택!", font=f_pret_28, fill=(235, 240, 250), anchor="lm")
+        # Red CTA Button & Date (Anchored neatly at bottom)
+        draw.rounded_rectangle([70, 1440, 310, 1515], radius=12, fill=(235, 25, 45))
+        draw.text((190, 1477), "▶ 참여방법", font=f_pret_36, fill=(255, 255, 255), anchor="mm")
+        draw.text((340, 1477), "한 달간 선착순 특별 혜택!", font=f_pret_28, fill=(235, 240, 250), anchor="lm")
 
         # Benefit description
-        draw.text((80, 1365), "#오운완 #인증샷 태그하고 업로드!", font=f_pret_28, fill=(255, 220, 0), anchor="lt")
-        draw.text((80, 1410), "운동 후 필수인 프리미엄 단백질 쉐이크 1잔 즉시 증정", font=f_pret_28, fill=(240, 245, 255), anchor="lt")
-        draw.text((80, 1455), "업로드 후 데스크 직원에게 화면 보여주면 바로 수령", font=f_pret_22, fill=(180, 190, 210), anchor="lt")
+        draw.text((70, 1545), "#오운완 #인증샷 태그하고 업로드!", font=f_pret_28, fill=(255, 220, 0), anchor="lt")
+        draw.text((70, 1590), "운동 후 필수인 프리미엄 단백질 쉐이크 1잔 즉시 증정", font=f_pret_28, fill=(240, 245, 255), anchor="lt")
+        draw.text((70, 1635), "업로드 후 데스크 직원에게 화면 보여주면 바로 수령", font=f_pret_22, fill=(180, 190, 210), anchor="lt")
 
         # Bottom Red Progress Bar
-        draw.line([(80, 1870), (canvas_w - 80, 1870)], fill=(70, 75, 85), width=6)
-        draw.line([(80, 1870), (450, 1870)], fill=(235, 25, 45), width=6)
+        draw.line([(70, 1870), (canvas_w - 70, 1870)], fill=(70, 75, 85), width=6)
+        draw.line([(70, 1870), (450, 1870)], fill=(235, 25, 45), width=6)
 
     # =========================================================================
     # 23. YOUTH TIPS PICK (모르면 손해보는 청년혜택 총정리)
@@ -940,36 +1073,56 @@ def render_template_background(
     # =========================================================================
     elif template.layout_type == "tesla_fsd_vision":
         img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+
+        # 1. Top Glass HUD Gradient
+        top_glass = Image.new("RGBA", (1, 260))
+        for y in range(260):
+            alpha = int(240 * (1.0 - (y / 260) ** 1.8))
+            top_glass.putpixel((0, y), (10, 13, 20, alpha))
+        img.alpha_composite(top_glass.resize((canvas_w, 260), Image.Resampling.BILINEAR), (0, 0))
+
         draw = ImageDraw.Draw(img)
 
-        # Top Tesla HUD Glass Bar
-        draw.rectangle([0, 0, canvas_w, 180], fill=(12, 15, 22, 230))
-        # Tesla Red 'T' & Brand
-        draw.text((70, 60), "T", font=f_black_58, fill=(235, 25, 45), anchor="lm")
-        draw.text((120, 55), "TESLA", font=f_pret_36, fill=(255, 255, 255), anchor="lm")
-        draw.text((120, 95), "FSD v13.2 AUTOPILOT", font=f_pret_22, fill=(160, 170, 190), anchor="lm")
+        # Left: Tesla Red Brand
+        draw_tesla_t(draw, 80, 60)
+        draw.text((120, 50), "TESLA", font=f_pret_36, fill=(255, 255, 255), anchor="lm")
+        draw.text((120, 88), "FSD v13.2 AUTOPILOT", font=f_pret_22, fill=(150, 165, 185), anchor="lm")
 
-        # Center Drive Mode & FSD Pill
-        draw.text((540, 55), "P   R   N   D*", font=f_pret_28, fill=(130, 140, 160), anchor="mm")
-        draw.rounded_rectangle([410, 85, 670, 130], radius=12, fill=(0, 200, 110, 230))
-        draw.text((540, 107), "🟢 FSD 자율주행 중", font=f_pret_22, fill=(255, 255, 255), anchor="mm")
+        # Center: Drive Mode & FSD Pill
+        draw.text((540, 50), "P   R   N   D*", font=f_pret_28, fill=(140, 150, 170), anchor="mm")
+        draw.rounded_rectangle([390, 75, 690, 125], radius=16, fill=(12, 38, 28, 230), outline=(0, 230, 140), width=2)
+        draw.text((540, 98), "🟢 FSD 자율주행 활성화", font=f_pret_22, fill=(0, 245, 160), anchor="mm")
 
-        # Right Speedometer & Battery
-        draw.text((canvas_w - 70, 50), "105", font=f_black_58, fill=(255, 255, 255), anchor="rm")
-        draw.text((canvas_w - 70, 85), "km/h", font=f_pret_22, fill=(180, 190, 210), anchor="rm")
-        draw.text((canvas_w - 70, 120), "88% ⚡ 432km", font=f_pret_22, fill=(0, 230, 140), anchor="rm")
+        # Right: Speedometer & Speed Limit Sign
+        draw.text((canvas_w - 180, 52), "105", font=f_black_72, fill=(255, 255, 255), anchor="rm")
+        draw.text((canvas_w - 172, 58), "km/h", font=f_pret_22, fill=(170, 185, 205), anchor="lm")
 
-        # Autopilot Lane Guide Lines (Subtle Cyan HUD)
-        draw.line([(280, 1380), (450, 860)], fill=(0, 210, 255, 120), width=4)
-        draw.line([(800, 1380), (630, 860)], fill=(0, 210, 255, 120), width=4)
-        draw.text((540, 830), "▲ FSD 도로 차선 및 경로 감지", font=f_pret_22, fill=(0, 210, 255, 170), anchor="mm")
+        sl_cx, sl_cy = canvas_w - 110, 52
+        draw.ellipse([sl_cx - 24, sl_cy - 24, sl_cx + 24, sl_cy + 24], fill=(255, 255, 255), outline=(235, 25, 45), width=5)
+        draw.text((sl_cx, sl_cy), "100", font=f_pret_18, fill=(10, 10, 10), anchor="mm")
 
-        # Bottom Tesla Control Dock
-        draw.rounded_rectangle([60, 1710, canvas_w - 60, 1850], radius=24, fill=(15, 18, 25, 235), outline=(55, 65, 85), width=2)
-        draw.text((110, 1780), "21.5°C 💨", font=f_pret_28, fill=(255, 255, 255), anchor="lm")
-        draw.text((540, 1765), "🎵 Spotify: Ambient Driving", font=f_pret_28, fill=(255, 255, 255), anchor="mm")
-        draw.text((540, 1805), f"Nav: {highlight.title[:24]}", font=f_pret_22, fill=(150, 165, 185), anchor="mm")
-        draw.text((canvas_w - 110, 1780), "🔋 AUTO", font=f_pret_28, fill=(0, 210, 110), anchor="rm")
+        # Battery Status
+        draw.text((canvas_w - 80, 100), "88% ⚡ 432km", font=f_pret_22, fill=(0, 230, 140), anchor="rm")
+
+        # 2. Bottom Control Dock with Frosted Glass Drop Shadow
+        dock_box = [60, 1680, canvas_w - 60, 1860]
+        draw_card_with_shadow(img, dock_box, radius=28, fill=(14, 18, 26, 235), outline=(50, 65, 85, 200), width=2, shadow_blur=16, shadow_offset=(0, 8), shadow_color=(0, 0, 0, 100))
+
+        draw = ImageDraw.Draw(img)
+        # Controls
+        draw.text((110, 1745), "21.5°C 💨", font=f_pret_28, fill=(255, 255, 255), anchor="lm")
+        draw.text((110, 1795), "♨️ 좌석 열선 2단", font=f_pret_22, fill=(150, 165, 185), anchor="lm")
+
+        # Media & Nav
+        draw.text((540, 1735), "🎵 Spotify: Ambient Driving", font=f_pret_28, fill=(255, 255, 255), anchor="mm")
+        draw.rounded_rectangle([360, 1762, 720, 1768], radius=3, fill=(45, 55, 75))
+        draw.rounded_rectangle([360, 1762, 530, 1768], radius=3, fill=(0, 230, 140))
+        nav_dest = highlight.title[:22] if highlight.title else "판교 테크노밸리"
+        draw.text((540, 1805), f"📍 목적지: {nav_dest}", font=f_pret_22, fill=(160, 175, 195), anchor="mm")
+
+        # Right Status
+        draw.text((canvas_w - 110, 1745), "🔋 AUTO", font=f_pret_28, fill=(0, 230, 140), anchor="rm")
+        draw.text((canvas_w - 110, 1795), "🚗 헤드라이트 ON", font=f_pret_22, fill=(150, 165, 185), anchor="rm")
 
     else:
         # Generic clean fallback

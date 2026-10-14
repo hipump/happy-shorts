@@ -22,6 +22,7 @@ const TEMPLATE_PREVIEWS: Record<string, string> = {
   facetime_call: "/templates/facetime_call.jpg",
   instagram_reels: "/templates/instagram_reels.jpg",
   iphone_gallery: "/templates/iphone_gallery.jpg",
+  product_review: "/templates/product_review.jpg",
   breaking_news: "/templates/news_portal.jpg",
   tech_review: "/templates/browser_window.jpg",
 };
@@ -32,7 +33,7 @@ export default function TemplateMockupCard({
   onSelect,
 }: TemplateMockupCardProps) {
   const tId = template.id;
-  const previewImage = TEMPLATE_PREVIEWS[tId];
+  const previewImage = `/templates/${tId}.jpg?v=2`;
 
   return (
     <div
@@ -60,8 +61,8 @@ export default function TemplateMockupCard({
               alt={template.name}
               className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
             />
-            {/* Soft gradient shadow for aesthetic depth */}
-            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-black/30 pointer-events-none" />
+            {/* Subtle border highlight for aesthetic depth */}
+            <div className="absolute inset-0 border border-white/5 pointer-events-none" />
 
             {/* Top Badge */}
             <div className="absolute top-2 left-2 flex items-center gap-1 z-10">
