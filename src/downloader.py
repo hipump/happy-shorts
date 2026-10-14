@@ -63,7 +63,7 @@ def get_video_info_ffprobe(file_path: str) -> Tuple[float, int, int, float]:
         
     return duration, width, height, fps
 
-def prepare_source(source: str) -> VideoMetadata:
+def prepare_source(source: str, callback=None) -> VideoMetadata:
     """Download video if URL or validate local file, returning VideoMetadata."""
     video_id = extract_youtube_id(source)
 
@@ -75,16 +75,38 @@ def prepare_source(source: str) -> VideoMetadata:
         title = f"YouTube_{video_id}"
         if expected_mp4.exists() and expected_mp4.stat().st_size > 1024:
             local_path = str(expected_mp4)
+            size_mb = round(expected_mp4.stat().st_size / (1024 * 1024), 1)
+            if callback:
+                callback(25, f"기존 다운로드 캐시 확인 완료 ({size_mb} MB) - 즉시 재사용")
         else:
+            if callback:
+                callback(5, "유튜브 영상 정보 조회 및 스트림 연결 중...")
+
+            def progress_hook(d):
+                if not callback:
+                    return
+                status = d.get('status')
+                if status == 'downloading':
+                    total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
+                    downloaded = d.get('downloaded_bytes', 0)
+                    speed = d.get('speed') or 0
+                    speed_mb = round(speed / (1024 * 1024), 1) if speed else 0.0
+                    pct = round((downloaded / total * 100), 1) if total > 0 else 0
+                    eff_pct = 5 + int(pct * 0.20)
+                    callback(eff_pct, f"유튜브 고화질 영상 다운로드 중... ({pct}% - {speed_mb}MB/s)")
+                elif status == 'finished':
+                    callback(25, "영상 다운로드 완료! 오디오/비디오 스트림 인코딩 중...")
+
             ydl_opts = {
                 'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best',
                 'outtmpl': str(DOWNLOADS_DIR / f'{video_id}.%(ext)s'),
                 'noplaylist': True,
+                'progress_hooks': [progress_hook],
                 'postprocessors': [{
                     'key': 'FFmpegVideoConvertor',
                     'preferedformat': 'mp4',
                 }],
-                'quiet': False,
+                'quiet': True,
                 'no_warnings': True,
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -97,6 +119,9 @@ def prepare_source(source: str) -> VideoMetadata:
                 candidates = list(DOWNLOADS_DIR.glob(f"{video_id}.*"))
                 if candidates:
                     local_path = str(candidates[0])
+
+        if callback:
+            callback(28, "영상 해상도 및 FPS 기술 규격 분석 중...")
 
         duration, width, height, fps = get_video_info_ffprobe(local_path)
 
@@ -115,10 +140,15 @@ def prepare_source(source: str) -> VideoMetadata:
         local_path = os.path.abspath(clean_path)
         if not os.path.exists(local_path):
             raise FileNotFoundError(f"로컬 비디오 파일을 찾을 수 없습니다: {local_path}")
-            
+
         title = Path(local_path).stem
+        if callback:
+            callback(15, f"로컬 비디오 소스 로드 완료 ({title})...")
+
         duration, width, height, fps = get_video_info_ffprobe(local_path)
-        
+        if callback:
+            callback(26, f"비디오 기술 규격 분석 완료 ({width}x{height}, {round(duration, 1)}초)")
+
         return VideoMetadata(
             source=source,
             is_url=False,

@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import json
 import uuid
@@ -55,18 +56,27 @@ app.mount("/media/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets"
 
 # In-memory job state & event queues
 jobs: Dict[str, Dict[str, Any]] = {}
-job_queues: Dict[str, asyncio.Queue] = {}
+job_subscribers: Dict[str, List[asyncio.Queue]] = {}
 
-def get_job_queue(job_id: str) -> asyncio.Queue:
-    if job_id not in job_queues:
-        job_queues[job_id] = asyncio.Queue()
-    return job_queues[job_id]
+def add_job_subscriber(job_id: str) -> asyncio.Queue:
+    if job_id not in job_subscribers:
+        job_subscribers[job_id] = []
+    q = asyncio.Queue()
+    job_subscribers[job_id].append(q)
+    return q
+
+def remove_job_subscriber(job_id: str, q: asyncio.Queue):
+    if job_id in job_subscribers and q in job_subscribers[job_id]:
+        job_subscribers[job_id].remove(q)
+        if not job_subscribers[job_id]:
+            del job_subscribers[job_id]
 
 async def emit_job_event(job_id: str, data: dict):
     if job_id in jobs:
         jobs[job_id].update(data)
-    q = get_job_queue(job_id)
-    await q.put(data)
+    subscribers = list(job_subscribers.get(job_id, []))
+    for q in subscribers:
+        await q.put(data)
 
 # Pydantic Models
 class AnalyzeRequest(BaseModel):
@@ -79,7 +89,8 @@ class AnalyzeRequest(BaseModel):
 
 class RenderRequest(BaseModel):
     source: str = Field(..., description="원본 영상 소스")
-    highlight: Dict[str, Any] = Field(..., description="선택된 하이라이트 정보")
+    highlight: Optional[Dict[str, Any]] = Field(default=None, description="선택된 단일 하이라이트 정보")
+    highlights: Optional[List[Dict[str, Any]]] = Field(default=None, description="복수 하이라이트 목록 (일괄 렌더링)")
     template_id: str = Field(default="browser_window", description="템플릿 ID")
     layout_override: Optional[str] = None
     subtitle_style: Optional[str] = None
@@ -157,15 +168,55 @@ def list_recent_videos():
     items.sort(key=lambda x: x["modified_at"], reverse=True)
     return {"videos": items}
 
+video_meta_cache: Dict[str, dict] = {}
+
+def get_cached_video_meta(video_path: Path) -> dict:
+    key = str(video_path)
+    try:
+        mtime = video_path.stat().st_mtime
+    except Exception:
+        mtime = 0.0
+    if key in video_meta_cache and video_meta_cache[key].get("mtime") == mtime:
+        return video_meta_cache[key]
+
+    width = 1080
+    height = 1920
+    duration = 30.0
+    try:
+        out = subprocess.check_output([
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height,duration",
+            "-of", "csv=s=x:p=0", str(video_path)
+        ], text=True, timeout=2.0).strip().split("x")
+        if len(out) >= 2:
+            width = int(out[0])
+            height = int(out[1])
+        if len(out) >= 3 and out[2]:
+            duration = round(float(out[2]), 1)
+    except Exception:
+        pass
+
+    aspect_ratio = "16:9" if width > height else "9:16"
+    data = {
+        "mtime": mtime,
+        "width": width,
+        "height": height,
+        "duration": duration,
+        "aspect_ratio": aspect_ratio
+    }
+    video_meta_cache[key] = data
+    return data
+
 @app.get("/api/outputs")
 def list_outputs():
-    """Returns all generated shorts in output directory."""
+    """Returns all generated shorts in output directory with rich metadata."""
     items = []
     for f in OUTPUT_DIR.glob("*.mp4"):
         if f.is_file():
             stat = f.stat()
             stem = f.stem
             base_key = stem[6:] if stem.startswith("short_") else stem
+            
             # Matching txt file
             txt_path = OUTPUT_DIR / f"shorts_info_{base_key}.txt"
             txt_fallback = OUTPUT_DIR / f"{stem}.txt"
@@ -181,9 +232,41 @@ def list_outputs():
                 except Exception:
                     pass
 
-            # Matching cover jpg
+            # Matching cover jpg (auto-generate if missing)
             cover_path = OUTPUT_DIR / f"cover_{base_key}.jpg"
+            if not cover_path.exists():
+                try:
+                    subprocess.run([
+                        "ffmpeg", "-y", "-ss", "00:00:01.0", "-i", str(f),
+                        "-vframes", "1", "-q:v", "2", str(cover_path)
+                    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                except Exception:
+                    pass
+
             cover_url = f"/media/output/{cover_path.name}" if cover_path.exists() else None
+
+            # Video technical metadata
+            vmeta = get_cached_video_meta(f)
+
+            # Parse SEO content for rich display
+            title = ""
+            virality_score = None
+            tags = []
+            if seo_info:
+                score_m = re.search(r"바이럴\s*점수:\s*(\d+)점", seo_info)
+                if score_m:
+                    virality_score = int(score_m.group(1))
+
+                title_m = re.search(r"1안:\s*(.+)", seo_info)
+                if title_m:
+                    title = title_m.group(1).strip()
+
+                tags = list(dict.fromkeys(re.findall(r"#[\w가-힣]+", seo_info)))[:6]
+
+            if not title:
+                cleaned = re.sub(r"^(short_|shorts_)", "", stem)
+                cleaned = cleaned.replace("_", " ").strip()
+                title = cleaned if cleaned else f.name
 
             items.append({
                 "filename": f.name,
@@ -192,7 +275,14 @@ def list_outputs():
                 "modified_at": stat.st_mtime,
                 "stream_url": f"/media/output/{f.name}",
                 "cover_url": cover_url,
-                "seo_content": seo_info
+                "seo_content": seo_info,
+                "title": title,
+                "virality_score": virality_score,
+                "tags": tags,
+                "duration": vmeta["duration"],
+                "aspect_ratio": vmeta["aspect_ratio"],
+                "width": vmeta["width"],
+                "height": vmeta["height"]
             })
     items.sort(key=lambda x: x["modified_at"], reverse=True)
     return {"outputs": items}
@@ -208,28 +298,57 @@ def open_output_folder():
 
 # Long-running background analyze worker
 async def run_analysis_task(job_id: str, req: AnalyzeRequest):
+    loop = asyncio.get_event_loop()
+
+    def make_progress_cb(step_num: int):
+        def cb(pct: int, msg: str):
+            payload = {
+                "status": "running",
+                "progress": max(5, min(99, int(pct))),
+                "step": step_num,
+                "message": msg
+            }
+            asyncio.run_coroutine_threadsafe(emit_job_event(job_id, payload), loop)
+        return cb
+
     try:
         await emit_job_event(job_id, {
             "status": "running",
-            "progress": 10,
+            "progress": 5,
             "step": 1,
-            "message": "영상 소스 준비 및 다운로드 확인 중..."
+            "message": "AI 분석 세션을 시작하고 영상 스트림을 연결하는 중..."
         })
 
         # Run in threadpool so event loop remains responsive
-        loop = asyncio.get_event_loop()
-        metadata: VideoMetadata = await loop.run_in_executor(None, prepare_source, req.source)
+        prep_cb = make_progress_cb(1)
+        metadata: VideoMetadata = await loop.run_in_executor(
+            None,
+            lambda: prepare_source(req.source, callback=prep_cb)
+        )
 
         stream_url = ""
-        if str(metadata.local_path).startswith(str(DOWNLOADS_DIR)):
-            rel_name = Path(metadata.local_path).name
-            stream_url = f"/media/downloads/{rel_name}"
+        local_p = Path(metadata.local_path).resolve()
+        downloads_res = DOWNLOADS_DIR.resolve()
+        output_res = OUTPUT_DIR.resolve()
+
+        if downloads_res in local_p.parents or local_p.parent == downloads_res or (DOWNLOADS_DIR / local_p.name).exists():
+            stream_url = f"/media/downloads/{local_p.name}"
+        elif output_res in local_p.parents or local_p.parent == output_res or (OUTPUT_DIR / local_p.name).exists():
+            stream_url = f"/media/output/{local_p.name}"
+        elif local_p.exists():
+            target_link = DOWNLOADS_DIR / local_p.name
+            if not target_link.exists():
+                try:
+                    os.symlink(local_p, target_link)
+                except Exception:
+                    pass
+            stream_url = f"/media/downloads/{local_p.name}"
 
         await emit_job_event(job_id, {
             "status": "running",
-            "progress": 30,
+            "progress": 28,
             "step": 2,
-            "message": f"음성 인식 및 단어 단위 타임스탬프 추출 중 (Whisper: {req.whisper_model})...",
+            "message": f"음성 인식 및 단어 단위 타임스탬프 추출 시작 (Whisper: {req.whisper_model})...",
             "video_metadata": {
                 "title": metadata.title,
                 "duration": metadata.duration,
@@ -240,16 +359,17 @@ async def run_analysis_task(job_id: str, req: AnalyzeRequest):
             }
         })
 
+        trans_cb = make_progress_cb(2)
         transcript: Transcript = await loop.run_in_executor(
             None,
-            lambda: transcribe_video(metadata.local_path, model_size=req.whisper_model)
+            lambda: transcribe_video(metadata.local_path, model_size=req.whisper_model, callback=trans_cb)
         )
 
         await emit_job_event(job_id, {
             "status": "running",
             "progress": 65,
             "step": 3,
-            "message": f"AI 하이라이트 문맥 분석 및 OpusClip 4기둥 바이럴 채점 중 (Ollama: {req.llm_model})...",
+            "message": f"AI 하이라이트 문맥 분석 및 OpusClip 4기둥 바이럴 채점 준비 (대화 {len(transcript.segments)}개 구간)...",
             "transcript_summary": {
                 "language": transcript.language,
                 "duration": transcript.duration,
@@ -261,16 +381,51 @@ async def run_analysis_task(job_id: str, req: AnalyzeRequest):
         detect_count = max(3, req.clips_count)
         target_dur = (req.min_dur, req.max_dur)
 
-        highlights: List[Highlight] = await loop.run_in_executor(
-            None,
-            lambda: detect_highlights(
-                transcript=transcript,
-                model_name=req.llm_model,
-                max_count=detect_count,
-                target_duration_range=target_dur,
-                video_path=metadata.local_path
+        hl_cb = make_progress_cb(3)
+        heartbeat_stop = asyncio.Event()
+
+        async def llm_heartbeat():
+            current_p = 71
+            heartbeat_msgs = [
+                f"Ollama LLM ({req.llm_model}) 심층 문맥 추론 및 바이럴 구간 탐색 중...",
+                "OpusClip 4기둥 (후킹력, 스토리 흐름, 정보 가치, 트렌드성) 채점 중...",
+                "시청 지속 시간(AVD) 극대화 및 이탈 방지 구간 탐색 중...",
+                "한국어 문장 어미(~다, ~요, ~죠) 문법적 경계 스냅 연산 중...",
+                "자연스러운 음성 연결을 위한 룸톤 오디오 패딩 보정 중..."
+            ]
+            idx = 0
+            while not heartbeat_stop.is_set():
+                try:
+                    await asyncio.wait_for(heartbeat_stop.wait(), timeout=2.5)
+                    break
+                except asyncio.TimeoutError:
+                    if current_p < 84:
+                        current_p += 2
+                        msg = heartbeat_msgs[idx % len(heartbeat_msgs)]
+                        idx += 1
+                        await emit_job_event(job_id, {
+                            "status": "running",
+                            "progress": current_p,
+                            "step": 3,
+                            "message": msg
+                        })
+
+        hb_task = asyncio.create_task(llm_heartbeat())
+        try:
+            highlights: List[Highlight] = await loop.run_in_executor(
+                None,
+                lambda: detect_highlights(
+                    transcript=transcript,
+                    model_name=req.llm_model,
+                    max_count=detect_count,
+                    target_duration_range=target_dur,
+                    video_path=metadata.local_path,
+                    callback=hl_cb
+                )
             )
-        )
+        finally:
+            heartbeat_stop.set()
+            await hb_task
 
         highlights.sort(key=lambda h: h.virality_score, reverse=True)
         for i, h in enumerate(highlights, 1):
@@ -283,7 +438,15 @@ async def run_analysis_task(job_id: str, req: AnalyzeRequest):
             "progress": 100,
             "step": 4,
             "message": f"AI 분석 완료! 총 {len(highlights)}개 고득점 후보 구간 도출됨",
-            "highlights": hl_dicts
+            "highlights": hl_dicts,
+            "video_metadata": {
+                "title": metadata.title,
+                "duration": metadata.duration,
+                "width": metadata.width,
+                "height": metadata.height,
+                "local_path": metadata.local_path,
+                "stream_url": stream_url
+            }
         })
     except Exception as e:
         import traceback
@@ -310,14 +473,26 @@ async def start_analysis(req: AnalyzeRequest, background_tasks: BackgroundTasks)
 
 # Long-running background render worker
 async def run_render_task(job_id: str, req: RenderRequest):
+    loop = asyncio.get_event_loop()
+
+    def make_progress_cb(step_num: int):
+        def cb(pct: int, msg: str):
+            payload = {
+                "status": "running",
+                "progress": max(5, min(99, int(pct))),
+                "step": step_num,
+                "message": msg
+            }
+            asyncio.run_coroutine_threadsafe(emit_job_event(job_id, payload), loop)
+        return cb
+
     try:
         await emit_job_event(job_id, {
             "status": "running",
-            "progress": 10,
+            "progress": 8,
+            "step": 1,
             "message": "렌더링 작업 준비 중 (오디오 및 자막 싱크 정렬)..."
         })
-
-        loop = asyncio.get_event_loop()
 
         metadata: VideoMetadata = await loop.run_in_executor(None, prepare_source, req.source)
         transcript: Transcript = await loop.run_in_executor(
@@ -325,8 +500,13 @@ async def run_render_task(job_id: str, req: RenderRequest):
             lambda: transcribe_video(metadata.local_path, model_size="large-v3-turbo")
         )
 
-        h_data = req.highlight
-        h_obj = Highlight(**h_data)
+        # Determine target highlights list
+        if req.highlights and len(req.highlights) > 0:
+            target_highlights = [Highlight(**h) for h in req.highlights]
+        elif req.highlight:
+            target_highlights = [Highlight(**req.highlight)]
+        else:
+            raise ValueError("렌더링할 하이라이트 구간이 지정되지 않았습니다.")
 
         # Template setup
         tpl = get_template(req.template_id)
@@ -338,94 +518,109 @@ async def run_render_task(job_id: str, req: RenderRequest):
             tpl.badge_style = "none"
 
         safe_title = sanitize_filename(metadata.title)
-        if req.target_filename:
-            target_stem = Path(req.target_filename).stem
-            counter = 1
-            cand_stem = target_stem
-            while (OUTPUT_DIR / f"{cand_stem}.mp4").exists():
-                cand_stem = f"{target_stem}_{counter}"
-                counter += 1
-            out_filename = f"{cand_stem}.mp4"
-            base_key = cand_stem[6:] if cand_stem.startswith("short_") else cand_stem
-            out_path = OUTPUT_DIR / out_filename
-            cover_path = OUTPUT_DIR / f"cover_{base_key}.jpg"
-            out_txt_path = OUTPUT_DIR / f"shorts_info_{base_key}.txt"
-        else:
-            out_video_str, out_cover_str, out_meta_str = get_unique_output_paths(OUTPUT_DIR, safe_title, h_obj.id)
-            out_path = Path(out_video_str)
-            out_filename = out_path.name
-            cover_path = Path(out_cover_str)
-            out_txt_path = Path(out_meta_str)
-
         ratio_tag = "16:9 가로" if req.aspect_ratio == "16:9" else "9:16 세로"
         sub_tag = " (원본 자막 AI 제거 적용)" if req.remove_subtitles else ""
-        await emit_job_event(job_id, {
-            "status": "running",
-            "progress": 35,
-            "message": f"{ratio_tag} 비주얼 리프레임 & 템플릿 [{tpl.name}] 합성 중...{sub_tag}"
-        })
 
-        # Render clip
-        render_res = await loop.run_in_executor(
-            None,
-            lambda: render_short(
-                metadata=metadata,
-                highlight=h_obj,
-                transcript=transcript,
-                template=tpl,
-                output_path=str(out_path),
-                show_subtitles=req.show_subtitles and tpl.subtitle_style != "none",
-                subtitle_style=tpl.subtitle_style,
-                active_color=tpl.active_color,
-                normal_color=tpl.normal_color,
-                font_name=tpl.font_name,
-                normalize_audio=True,
-                aspect_ratio=req.aspect_ratio,
-                remove_subtitles=req.remove_subtitles,
-                filter_fillers=req.filter_fillers
-            )
-        )
+        total_clips = len(target_highlights)
+        rendered_results = []
 
-        await emit_job_event(job_id, {
-            "status": "running",
-            "progress": 85,
-            "message": "2026 알고리즘 최적화 유튜브 메타데이터 생성 중..."
-        })
+        for clip_idx, h_obj in enumerate(target_highlights, 1):
+            clip_base_pct = int(((clip_idx - 1) / total_clips) * 100)
+            clip_span = max(1, int(100 / total_clips))
 
-        # Generate YouTube SEO Text File
-        await loop.run_in_executor(
-            None,
-            lambda: generate_youtube_metadata_file(
-                output_txt_path=str(out_txt_path),
-                highlight=h_obj,
-                metadata=metadata,
-                output_video_path=str(out_path)
-            )
-        )
+            def make_clip_progress_cb(stage_step: int):
+                def cb(pct: int, msg: str):
+                    overall_p = clip_base_pct + int((pct / 100) * clip_span)
+                    overall_p = max(5, min(99, overall_p))
+                    prefix = f"[{clip_idx}/{total_clips}번째 쇼츠] " if total_clips > 1 else ""
+                    payload = {
+                        "status": "running",
+                        "progress": overall_p,
+                        "step": stage_step,
+                        "message": f"{prefix}{msg}"
+                    }
+                    asyncio.run_coroutine_threadsafe(emit_job_event(job_id, payload), loop)
+                return cb
 
-        seo_content = ""
-        if out_txt_path.exists():
-            seo_content = out_txt_path.read_text(encoding="utf-8")
+            prefix_msg = f"[{clip_idx}/{total_clips}번째 쇼츠] " if total_clips > 1 else ""
+            await emit_job_event(job_id, {
+                "status": "running",
+                "progress": max(5, clip_base_pct + 4),
+                "step": 2,
+                "message": f"{prefix_msg}{ratio_tag} 비주얼 리프레임 & 템플릿 [{tpl.name}] 합성 준비 중...{sub_tag}"
+            })
 
-        # Extract high-res cover thumbnail
-        try:
+            if req.target_filename and total_clips == 1:
+                target_stem = Path(req.target_filename).stem
+                counter = 1
+                cand_stem = target_stem
+                while (OUTPUT_DIR / f"{cand_stem}.mp4").exists():
+                    cand_stem = f"{target_stem}_{counter}"
+                    counter += 1
+                out_filename = f"{cand_stem}.mp4"
+                base_key = cand_stem[6:] if cand_stem.startswith("short_") else cand_stem
+                out_path = OUTPUT_DIR / out_filename
+                cover_path = OUTPUT_DIR / f"cover_{base_key}.jpg"
+                out_txt_path = OUTPUT_DIR / f"shorts_info_{base_key}.txt"
+            else:
+                out_video_str, out_cover_str, out_meta_str = get_unique_output_paths(OUTPUT_DIR, safe_title, h_obj.id)
+                out_path = Path(out_video_str)
+                out_filename = out_path.name
+                cover_path = Path(out_cover_str)
+                out_txt_path = Path(out_meta_str)
+
+            render_cb = make_clip_progress_cb(3)
             await loop.run_in_executor(
                 None,
-                lambda: subprocess.run([
-                    "ffmpeg", "-y", "-ss", "00:00:01.5", "-i", str(out_path),
-                    "-vframes", "1", "-q:v", "2", str(cover_path)
-                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                lambda: render_short(
+                    metadata=metadata,
+                    highlight=h_obj,
+                    transcript=transcript,
+                    template=tpl,
+                    output_path=str(out_path),
+                    show_subtitles=req.show_subtitles and tpl.subtitle_style != "none",
+                    subtitle_style=tpl.subtitle_style,
+                    active_color=tpl.active_color,
+                    normal_color=tpl.normal_color,
+                    font_name=tpl.font_name,
+                    normalize_audio=True,
+                    aspect_ratio=req.aspect_ratio,
+                    remove_subtitles=req.remove_subtitles,
+                    filter_fillers=req.filter_fillers,
+                    callback=render_cb
+                )
             )
-        except Exception:
-            pass
 
-        cover_url = f"/media/output/{cover_path.name}" if cover_path.exists() else None
+            # Generate YouTube SEO Text File
+            await loop.run_in_executor(
+                None,
+                lambda: generate_youtube_metadata_file(
+                    output_txt_path=str(out_txt_path),
+                    highlight=h_obj,
+                    metadata=metadata,
+                    output_video_path=str(out_path)
+                )
+            )
 
-        await emit_job_event(job_id, {
-            "status": "completed",
-            "progress": 100,
-            "message": "쇼츠 렌더링 완성!",
-            "result": {
+            seo_content = ""
+            if out_txt_path.exists():
+                seo_content = out_txt_path.read_text(encoding="utf-8")
+
+            # Extract high-res cover thumbnail
+            try:
+                await loop.run_in_executor(
+                    None,
+                    lambda: subprocess.run([
+                        "ffmpeg", "-y", "-ss", "00:00:01.5", "-i", str(out_path),
+                        "-vframes", "1", "-q:v", "2", str(cover_path)
+                    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                )
+            except Exception:
+                pass
+
+            cover_url = f"/media/output/{cover_path.name}" if cover_path.exists() else None
+
+            rendered_results.append({
                 "filename": out_filename,
                 "filepath": str(out_path),
                 "stream_url": f"/media/output/{out_filename}",
@@ -433,8 +628,18 @@ async def run_render_task(job_id: str, req: RenderRequest):
                 "seo_content": seo_content,
                 "virality_score": h_obj.virality_score,
                 "title": h_obj.title,
-                "hook_text": h_obj.hook_text
-            }
+                "hook_text": h_obj.hook_text,
+                "id": h_obj.id,
+                "duration": h_obj.duration
+            })
+
+        await emit_job_event(job_id, {
+            "status": "completed",
+            "progress": 100,
+            "step": 4,
+            "message": f"총 {total_clips}개 쇼츠 일괄 렌더링 완성!" if total_clips > 1 else "쇼츠 렌더링 완성!",
+            "result": rendered_results[0],
+            "results": rendered_results
         })
     except Exception as e:
         import traceback
@@ -471,20 +676,38 @@ async def stream_job_events(job_id: str):
         raise HTTPException(status_code=404, detail="해당 작업 ID를 찾을 수 없습니다.")
 
     async def event_generator():
-        q = get_job_queue(job_id)
-        # First send current state
-        yield {"data": json.dumps(jobs[job_id], ensure_ascii=False)}
-        while True:
-            try:
-                data = await asyncio.wait_for(q.get(), timeout=25.0)
-                yield {"data": json.dumps(data, ensure_ascii=False)}
-                if data.get("status") in ["completed", "failed"]:
-                    break
-            except asyncio.TimeoutError:
-                # Keep-alive ping
-                yield {"event": "ping", "data": "keep-alive"}
+        q = add_job_subscriber(job_id)
+        try:
+            # First send current state immediately
+            initial_state = dict(jobs.get(job_id, {}))
+            yield {"data": json.dumps(initial_state, ensure_ascii=False)}
 
-    return EventSourceResponse(event_generator())
+            if initial_state.get("status") in ["completed", "failed"]:
+                return
+
+            while True:
+                try:
+                    data = await asyncio.wait_for(q.get(), timeout=15.0)
+                    yield {"data": json.dumps(data, ensure_ascii=False)}
+                    if data.get("status") in ["completed", "failed"]:
+                        break
+                except asyncio.TimeoutError:
+                    current_status = jobs.get(job_id, {}).get("status")
+                    if current_status in ["completed", "failed"]:
+                        yield {"data": json.dumps(jobs[job_id], ensure_ascii=False)}
+                        break
+                    yield {"event": "ping", "data": "keep-alive"}
+        finally:
+            remove_job_subscriber(job_id, q)
+
+    return EventSourceResponse(
+        event_generator(),
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        }
+    )
 
 if __name__ == "__main__":
     import uvicorn

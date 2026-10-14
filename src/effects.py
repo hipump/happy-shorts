@@ -2360,7 +2360,12 @@ def render_top_header(
         draw.line([(0, y), (canvas_w, y)], fill=(0, 0, 0, alpha))
 
     # 2. Eyebrow Category Pill Badge
-    badge_title = f"INTERVIEW • CLIP #{clip_idx:02d}"
+    clean_prefix = badge_prefix.strip() if badge_prefix else ""
+    if clean_prefix:
+        badge_title = f"{clean_prefix} • CLIP #{clip_idx:02d}"
+    else:
+        badge_title = f"CLIP #{clip_idx:02d}"
+
     if badge_style == "red_pill":
         fill_col = (180, 20, 30, 240)
         text_col = (255, 255, 255)
@@ -2374,6 +2379,7 @@ def render_top_header(
         text_col = (255, 230, 0)
         out_col = (255, 230, 0, 220)
 
+    center_x = canvas_w // 2
     draw_pill_badge(
         draw, center_y=115, text=badge_title,
         font=f_pret_26, fill_color=fill_col, text_color=text_col,
@@ -2383,10 +2389,11 @@ def render_top_header(
     # 3. 2-line Bold Headline below badge
     f_t = f_black_58
     tb = f_t.getbbox(line1)
-    if tb[2] - tb[0] > 900:
-        f_t = get_font(FONT_BLACK_HAN_SANS, max(36, int(58 * (900 / (tb[2] - tb[0])))))
-    draw.text((540, 190), line1, font=f_t, fill=(255, 255, 255), stroke_width=4, stroke_fill=(10, 15, 20), anchor="mm")
-    draw.text((540, 260), f"《 {line2} 》", font=f_pret_36, fill=(255, 230, 0), stroke_width=3, stroke_fill=(10, 15, 20), anchor="mm")
+    max_title_w = canvas_w - 200
+    if tb[2] - tb[0] > max_title_w:
+        f_t = get_font(FONT_BLACK_HAN_SANS, max(36, int(58 * (max_title_w / (tb[2] - tb[0])))))
+    draw.text((center_x, 190), line1, font=f_t, fill=(255, 255, 255), stroke_width=4, stroke_fill=(10, 15, 20), anchor="mm")
+    draw.text((center_x, 260), f"《 {line2} 》", font=f_pret_36, fill=(255, 230, 0), stroke_width=3, stroke_fill=(10, 15, 20), anchor="mm")
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     img.save(output_path, "PNG")

@@ -59,6 +59,15 @@ export interface RenderedOutput {
   stream_url: string;
   cover_url?: string;
   seo_content?: string;
+  title?: string;
+  virality_score?: number;
+  tags?: string[];
+  duration?: number;
+  aspect_ratio?: string;
+  width?: number;
+  height?: number;
+  id?: number;
+  hook_text?: string;
 }
 
 export interface SystemStatus {

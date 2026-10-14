@@ -1,6 +1,6 @@
 import json
 import re
-from typing import List, Optional
+from typing import List, Optional, Callable
 import ollama
 from src.models import Transcript, Highlight
 
@@ -346,7 +346,8 @@ def detect_highlights(
     model_name: str = "qwen2.5:14b",
     max_count: int = 1,
     target_duration_range: tuple[int, int] = (30, 50),
-    video_path: Optional[str] = None
+    video_path: Optional[str] = None,
+    callback: Optional[Callable[[int, str], None]] = None
 ) -> List[Highlight]:
     """
     Detect the most engaging shorts highlight segments using Ollama.
@@ -370,6 +371,9 @@ def detect_highlights(
                 score_breakdown={"hook": 27, "flow": 23, "value": 23, "trend": 17}
             )
         ]
+
+    if callback:
+        callback(66, f"AI 문맥 분석 시작 (전체 {len(transcript.segments)}개 대화 세그먼트 벡터 구조화)...")
 
     formatted_text = format_transcript_for_llm(transcript)
 
@@ -431,6 +435,9 @@ def detect_highlights(
     }
 
     try:
+        if callback:
+            callback(70, f"Ollama LLM ({model_name}) 심층 문맥 추론 및 바이럴 구간 탐색 중...")
+
         response = ollama.chat(
             model=model_name,
             messages=[
@@ -441,6 +448,9 @@ def detect_highlights(
             options={"temperature": 0.25}
         )
         content = response["message"]["content"]
+
+        if callback:
+            callback(85, "한국어 문장 어미(~다, ~요, ~죠) 문법 경계 스냅 및 룸톤 오디오 보정 중...")
         
         parsed = json.loads(content)
         if isinstance(parsed, dict):
@@ -512,6 +522,9 @@ def detect_highlights(
             )
             has_curiosity_hook = any(kw in first_segs_text for kw in ["어떻게", "왜", "방법", "꿀팁", "주의", "실수", "비법", "기능", "중요", "까", "나요", "죠", "모르", "진짜"])
 
+            if callback and len(highlights) == 0:
+                callback(92, "OpusClip 4기둥 바이럴 채점 및 CTR 훅 타이포그래피 생성 중...")
+
             raw_v = item.get("virality_score")
             base_llm = int(raw_v) if raw_v and str(raw_v).isdigit() else 80
 
@@ -545,6 +558,8 @@ def detect_highlights(
                 break
             
         if highlights:
+            if callback:
+                callback(96, f"최종 {len(highlights)}개 고득점 하이라이트 구간 확정 완료")
             return highlights
 
     except Exception as e:

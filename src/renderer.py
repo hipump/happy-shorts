@@ -2,7 +2,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Callable
 from src.models import Highlight, Transcript, VideoMetadata, Word
 from src.templates import ShortsTemplate, get_template
 from src.framing import build_framing_filter
@@ -33,6 +33,7 @@ def render_short(
     aspect_ratio: str = "9:16",
     remove_subtitles: bool = False,
     filter_fillers: bool = True,
+    callback: Optional[Callable[[int, str], None]] = None,
     **kwargs
 ) -> str:
     """
@@ -96,6 +97,9 @@ def render_short(
     canvas_h = 1080 if is_landscape else 1920
 
     # 1. Collect and adjust word timestamps relative to clip start
+    if callback:
+        callback(20, "클립 타임라인 및 트랜스크립트 싱크 분석 중...")
+
     clip_words = []
     for seg in transcript.segments:
         for w in seg.words:
@@ -127,6 +131,11 @@ def render_short(
     ]
     filter_chains = []
     next_input_idx = 1
+
+    ratio_desc = "16:9 가로 와이드" if is_landscape else "9:16 세로 쇼츠"
+    if callback:
+        sub_info = " (원본 자막 AI 제거 포함)" if remove_subtitles else ""
+        callback(35, f"{ratio_desc} 비주얼 프레이밍 & 템플릿 [{template.name}] 캔버스 합성 중...{sub_info}")
 
     # 2. Template Background or Framing Filter
     if is_landscape:
@@ -226,6 +235,8 @@ def render_short(
     if show_subtitles and eff_sub_style != "none" and clip_words:
         sub_y = int(canvas_h * 0.82) if is_landscape else template.subtitle_y
         if sub_y > 0:
+            if callback:
+                callback(55, f"키네틱 타이포그래피 자막 시퀀스 렌더링 중 (스타일: {eff_sub_style})...")
             sub_concat_file, _ = generate_subtitle_track(
                 words=clip_words,
                 clip_duration=duration,
@@ -251,6 +262,9 @@ def render_short(
     full_filter_complex = ";".join(filter_chains)
 
     # 4. Build & Run FFmpeg Command
+    if callback:
+        callback(72, "FFmpeg 하드웨어 가속 비디오 인코딩 & -14 LUFS 오디오 노멀라이징 중...")
+
     cmd = ["ffmpeg", "-y"]
     cmd.extend(input_args)
     cmd.extend([
@@ -277,6 +291,9 @@ def render_short(
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg rendering failed: {result.stderr[-1000:]}")
+
+    if callback:
+        callback(88, "비디오 스트림 인코딩 완료 및 임시 리소스 정리 중...")
 
     # Clean up temp frames for this clip
     shutil.rmtree(clip_temp_dir, ignore_errors=True)

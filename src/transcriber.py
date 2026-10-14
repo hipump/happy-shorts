@@ -35,7 +35,8 @@ def transcribe_video(
     video_path: str,
     model_size: str = "large-v3-turbo",
     device: str = "cpu",
-    compute_type: str = "int8"
+    compute_type: str = "int8",
+    callback=None
 ) -> Transcript:
     """
     Transcribe video using faster-whisper with word-level timestamps.
@@ -48,17 +49,26 @@ def transcribe_video(
         try:
             with open(cache_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
+                if callback:
+                    callback(62, f"기존 음성 인식(STT) 캐시 불러오기 완료 ({len(data.get('segments', []))}개 발화)")
                 return Transcript(**data)
         except Exception:
             pass
 
     # Extract audio
+    if callback:
+        callback(32, "고음질 16kHz 모노 오디오 트랙 추출 중...")
     wav_path = str(TEMP_DIR / f"{cache_key}.wav")
     extract_audio(video_path, wav_path)
     
     # Load faster-whisper model
+    if callback:
+        callback(36, f"Faster-Whisper ({model_size}) 음성 모델 로드 중...")
     model = WhisperModel(model_size, device=device, compute_type=compute_type)
     
+    if callback:
+        callback(40, "단어 단위 정밀 타임스탬프 추출 시작...")
+
     segments_generator, info = model.transcribe(
         wav_path,
         beam_size=5,
@@ -66,8 +76,11 @@ def transcribe_video(
         language="ko"  # default to Korean, faster-whisper will detect if different
     )
     
+    total_audio_sec = max(1.0, float(info.duration or 1.0))
     segments_list = []
     seg_idx = 0
+    last_pct = 40
+
     for seg in segments_generator:
         words = []
         if seg.words:
