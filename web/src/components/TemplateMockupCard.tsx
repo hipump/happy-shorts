@@ -27,13 +27,35 @@ const TEMPLATE_PREVIEWS: Record<string, string> = {
   tech_review: "/templates/browser_window.jpg",
 };
 
+const FONT_LABELS: Record<string, string> = {
+  gasoek: "가석원 (헤비 볼드)",
+  black_han_sans: "블랙한산스 (볼드 고딕)",
+  dohyeon: "배민 도현 (파워 고딕)",
+  jua: "배민 주아 (둥근 캐주얼)",
+  bagel: "베이글 팻 원 (유튜브 밈 볼드)",
+  gowun_batang: "고운바탕 (감성 명조)",
+  song_myung: "송명체 (시네마 명조)",
+  dongle: "동글 (감성 브이로그)",
+  gaegu: "개구 (자유 손글씨)",
+  poor_story: "푸어스토리 (분필 손글씨)",
+  yeon_sung: "연성체 (따뜻한 붓글씨)",
+  sunflower: "해바라기 (모던 테크)",
+  pretendard: "프리텐다드 (클린 산세리프)",
+  kirang: "기랑해랑 (잉크 펑크 아트)",
+  dokdo: "독도체 (거친 붓글씨 아트)",
+  east_sea_dokdo: "동해독도 (캘리그래피)",
+  black_white_picture: "흑백사진 (레트로 포스터)",
+  nanum_brush: "나눔붓글씨 (먹물 붓글씨)",
+  nanum_pen: "나눔펜글씨 (잉크 드로잉)",
+};
+
 export default function TemplateMockupCard({
   template,
   isSelected,
   onSelect,
 }: TemplateMockupCardProps) {
   const tId = template.id;
-  const previewImage = `/templates/${tId}.jpg?v=2`;
+  const previewImage = `/templates/${tId}.jpg?v=8`;
 
   return (
     <div
@@ -52,7 +74,7 @@ export default function TemplateMockupCard({
         </div>
       )}
 
-      {/* Visual 9:16 Miniature Screen Mockup (MiriCanvas Style) */}
+      {/* Visual 9:16 Miniature Screen Mockup */}
       <div className="relative aspect-[9/16] w-full rounded-xl overflow-hidden shadow-2xl border border-white/10 mb-3 flex flex-col justify-between p-2 select-none bg-slate-950">
         {previewImage ? (
           <div className="absolute inset-0 bg-slate-950 overflow-hidden group/thumb">
@@ -63,18 +85,6 @@ export default function TemplateMockupCard({
             />
             {/* Subtle border highlight for aesthetic depth */}
             <div className="absolute inset-0 border border-white/5 pointer-events-none" />
-
-            {/* Top Badge */}
-            <div className="absolute top-2 left-2 flex items-center gap-1 z-10">
-              <span className="bg-black/60 backdrop-blur-md text-white text-[8px] font-bold px-2 py-0.5 rounded-full border border-white/20 shadow">
-                {template.badge_prefix}
-              </span>
-              {template.category.includes("테슬라") && (
-                <span className="bg-red-600/90 backdrop-blur-md text-white text-[7px] font-bold px-1.5 py-0.5 rounded-full border border-red-400/50 shadow">
-                  TESLA
-                </span>
-              )}
-            </div>
 
             {/* Hover Play Button */}
             <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20 backdrop-blur-[1px]">
@@ -92,7 +102,7 @@ export default function TemplateMockupCard({
           <div className="absolute inset-0 bg-[#f7f8fa] flex flex-col justify-between p-2 text-black">
             {/* Top Red Broadcast Bar */}
             <div className="w-full bg-[#d71923] text-white px-2 py-1 rounded flex items-center justify-between text-[9px] font-black tracking-wider">
-              <span>MIRI NEWS</span>
+              <span>SHORTS NEWS</span>
               <span className="flex items-center gap-1 bg-black/60 px-1.5 py-0.5 rounded-full text-[8px]">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
                 LIVE
@@ -118,7 +128,7 @@ export default function TemplateMockupCard({
             {/* Bottom News Briefing Card */}
             <div className="bg-white rounded-lg p-1.5 border border-slate-200 shadow-sm mt-1 space-y-1">
               <div className="flex items-center justify-between">
-                <span className="text-[7px] bg-red-600 text-white px-1 py-0.5 rounded font-bold">MIRI NEWS 속보</span>
+                <span className="text-[7px] bg-red-600 text-white px-1 py-0.5 rounded font-bold">SHORTS NEWS 속보</span>
                 <span className="text-[6px] text-slate-400">실시간 팩트체크</span>
               </div>
               <div className="space-y-0.5 text-[8px] text-slate-800 font-medium">
@@ -551,7 +561,7 @@ export default function TemplateMockupCard({
           <div className="absolute inset-0 bg-[#fbf9f4] flex flex-col justify-between p-2 text-slate-900">
             {/* Comic Speech Bubble */}
             <div className="bg-[#ffe74c] rounded-xl p-1.5 border-2 border-black shadow-[2px_2px_0px_rgba(0,0,0,1)] text-center">
-              <p className="text-[8px] font-black leading-tight">"귀하게 자란 내가 이걸 봐도 될까?!"</p>
+              <p className="text-[8px] font-black leading-tight">&ldquo;귀하게 자란 내가 이걸 봐도 될까?!&rdquo;</p>
             </div>
 
             <div className="aspect-video bg-slate-950 rounded-lg overflow-hidden my-1 flex items-center justify-center border-2 border-black shadow-[2px_2px_0px_rgba(0,0,0,1)]">
@@ -561,7 +571,7 @@ export default function TemplateMockupCard({
             </div>
 
             <div className="bg-white rounded-lg p-1 border-2 border-black shadow-[2px_2px_0px_rgba(0,0,0,1)] text-[7px] text-slate-800 font-bold truncate">
-              💬 실시간 베댓 1위: "이거 100% 실화 ㅋㅋㅋ"
+              💬 실시간 베댓 1위: &ldquo;이거 100% 실화 ㅋㅋㅋ&rdquo;
             </div>
           </div>
         )}
@@ -616,7 +626,7 @@ export default function TemplateMockupCard({
                 <span className="bg-amber-600/30 text-amber-300 px-1 py-0.5 rounded">화병 19%</span>
                 <span className="bg-emerald-600/30 text-emerald-300 px-1 py-0.5 rounded">이성 1%</span>
               </div>
-              <p className="text-slate-400 truncate">"100% 실화... 내 모습인 줄 알았다"</p>
+              <p className="text-slate-400 truncate">&ldquo;100% 실화... 내 모습인 줄 알았다&rdquo;</p>
             </div>
           </div>
         )}
@@ -682,7 +692,7 @@ export default function TemplateMockupCard({
             {/* Subtitle Bar */}
             <div className="bg-black/40 backdrop-blur-sm rounded-lg px-2 py-1 text-center">
               <p className="text-[7px] font-medium text-stone-200 truncate">
-                "작은 습관 하나가 하루를 완전히 바꿔요"
+                &ldquo;작은 습관 하나가 하루를 완전히 바꿔요&rdquo;
               </p>
             </div>
           </div>
@@ -722,19 +732,19 @@ export default function TemplateMockupCard({
 
             {/* Bottom Watermark */}
             <div className="text-center pb-0.5">
-              <p className="text-[6px] text-slate-300">@designer.miri • 실시간 VLOG</p>
+              <p className="text-[6px] text-slate-300">@happy.shorts • 실시간 VLOG</p>
             </div>
           </div>
         )}
 
         {/* ========================================================= */}
-        {/* 22. PROMO FITNESS GYM (미리짐 오운완 챌린지 & 이벤트 CTA) */}
+        {/* 22. PROMO FITNESS GYM (스포츠 HUD 오운완 챌린지 & 이벤트 CTA) */}
         {/* ========================================================= */}
         {tId === "promo_fitness_gym" && (
           <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent flex flex-col justify-between p-2 text-white">
-            {/* Top MIRIGYM Bar */}
+            {/* Top Sports Bar */}
             <div className="flex items-center justify-between pt-0.5">
-              <span className="text-[#eb192d] font-black text-[10px] tracking-wider">MIRIGYM</span>
+              <span className="text-[#eb192d] font-black text-[10px] tracking-wider">SPORTS GYM</span>
               <div className="flex items-center gap-1 text-[8px] text-white/80">
                 <span className="w-3.5 h-3.5 rounded-full border border-white/60 flex items-center justify-center">+</span>
                 <span className="w-3.5 h-3.5 rounded-full border border-white/60 flex items-center justify-center text-[7px]">♡</span>
@@ -819,7 +829,7 @@ export default function TemplateMockupCard({
               <span className="bg-[#e11928] text-white text-[7px] font-black px-2 py-0.5 rounded-full shadow">
                 ▶ 이번 주 짧은 드라마
               </span>
-              <p className="text-[9px] font-black text-white mt-1 drop-shadow">'가장 많이 본 장면'</p>
+              <p className="text-[9px] font-black text-white mt-1 drop-shadow">&lsquo;가장 많이 본 장면&rsquo;</p>
               <p className="text-[10px] font-black text-white drop-shadow">다시 보기!</p>
             </div>
 
@@ -904,12 +914,18 @@ export default function TemplateMockupCard({
           </span>
         </div>
 
-        <h3 className="font-bold text-xs text-white leading-snug line-clamp-1 group-hover:text-indigo-300 transition">
+        <h3 className="font-bold text-xs text-white leading-snug line-clamp-2 min-h-[2rem] group-hover:text-indigo-300 transition">
           {template.name}
         </h3>
         <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed">
           {template.description}
         </p>
+
+        <div className="flex items-center justify-between pt-1 border-t border-slate-800/80">
+          <span className="text-[9px] font-medium px-2 py-0.5 rounded-md bg-indigo-950/70 text-indigo-300 border border-indigo-800/50 flex items-center gap-1">
+            🔤 {FONT_LABELS[template.font_name] || template.font_name}
+          </span>
+        </div>
       </div>
     </div>
   );

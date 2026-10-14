@@ -10,6 +10,7 @@ export interface Template {
   active_color: number[];
   normal_color: number[];
   font_name: string;
+  sub_font_name?: string;
   video_box: number[];
 }
 

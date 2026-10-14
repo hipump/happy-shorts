@@ -57,11 +57,14 @@ export default function HappyShortsApp() {
   const [minDur, setMinDur] = useState<number>(30);
   const [maxDur, setMaxDur] = useState<number>(50);
 
-  // Step 2: Template
+  // Step 2: Template & Options
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("browser_window");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [subtitleStyle, setSubtitleStyle] = useState<string>("viral_pop");
   const [showBadge, setShowBadge] = useState<boolean>(true);
+  const [aspectRatio, setAspectRatio] = useState<"9:16" | "16:9">("9:16");
+  const [removeSubtitles, setRemoveSubtitles] = useState<boolean>(false);
+  const [filterFillers, setFilterFillers] = useState<boolean>(true);
 
   // Step 3: Analysis
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -75,7 +78,7 @@ export default function HappyShortsApp() {
   const [isRendering, setIsRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState(0);
   const [renderMessage, setRenderMessage] = useState("");
-  const [renderedResult, setRenderedResult] = useState<any | null>(null);
+  const [renderedResult, setRenderedResult] = useState<RenderedOutput | null>(null);
 
   // Interactive Video Player & Trimming
   const [previewTimeRange, setPreviewTimeRange] = useState<{ start: number; end: number }>({ start: 0, end: 0 });
@@ -87,7 +90,7 @@ export default function HappyShortsApp() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Initial Data Fetching
-  const fetchStatusAndData = async () => {
+  const fetchStatusAndData = React.useCallback(async () => {
     try {
       const [resStatus, resTpl, resRecent, resOutputs] = await Promise.all([
         fetch("/api/status").then((r) => r.json()),
@@ -102,13 +105,18 @@ export default function HappyShortsApp() {
     } catch (err) {
       console.error("데이터 로딩 실패:", err);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchStatusAndData();
+    const timer = setTimeout(() => {
+      fetchStatusAndData();
+    }, 0);
     const interval = setInterval(fetchStatusAndData, 8000);
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
+  }, [fetchStatusAndData]);
 
   const getEffectiveSource = (): string => {
     if (sourceMode === "youtube") return youtubeUrl.trim();
@@ -194,9 +202,9 @@ export default function HappyShortsApp() {
       eventSource.onerror = () => {
         eventSource.close();
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
       setIsAnalyzing(false);
-      setErrorMsg(err.message || "분석 요청에 실패했습니다.");
+      setErrorMsg(err instanceof Error ? err.message : "분석 요청에 실패했습니다.");
     }
   };
 
@@ -230,6 +238,9 @@ export default function HappyShortsApp() {
           subtitle_style: subtitleStyle,
           show_badge: showBadge,
           show_subtitles: subtitleStyle !== "none",
+          aspect_ratio: aspectRatio,
+          remove_subtitles: removeSubtitles,
+          filter_fillers: filterFillers,
         }),
       });
 
@@ -261,9 +272,9 @@ export default function HappyShortsApp() {
       eventSource.onerror = () => {
         eventSource.close();
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
       setIsRendering(false);
-      setErrorMsg(err.message || "렌더링 요청에 실패했습니다.");
+      setErrorMsg(err instanceof Error ? err.message : "렌더링 요청에 실패했습니다.");
     }
   };
 
@@ -637,6 +648,102 @@ export default function HappyShortsApp() {
                     </div>
                   </div>
 
+                  {/* Settings: Aspect Ratio & Subtitle Removal */}
+                  <div className="pt-4 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 flex items-center justify-between mb-2">
+                        <span>영상의 화면 비율 (Aspect Ratio)</span>
+                        <span className="text-indigo-400 font-bold">
+                          {aspectRatio === "9:16" ? "9:16 세로 (쇼츠)" : "16:9 가로 (와이드)"}
+                        </span>
+                      </label>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setAspectRatio("9:16")}
+                          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
+                            aspectRatio === "9:16"
+                              ? "bg-indigo-600/20 border-indigo-500 text-indigo-300 shadow-sm"
+                              : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
+                          }`}
+                        >
+                          <span>📱 세로 (9:16)</span>
+                          <span className="text-[10px] text-amber-400 font-normal">얼굴 자동 추적</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAspectRatio("16:9")}
+                          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
+                            aspectRatio === "16:9"
+                              ? "bg-indigo-600/20 border-indigo-500 text-indigo-300 shadow-sm"
+                              : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
+                          }`}
+                        >
+                          <span>🖥️ 가로 (16:9)</span>
+                          <span className="text-[10px] text-slate-500 font-normal">유튜브 와이드</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 flex items-center justify-between mb-2">
+                        <span>원본 영상 자막 처리</span>
+                        <span className={`font-bold ${removeSubtitles ? "text-amber-400" : "text-slate-500"}`}>
+                          {removeSubtitles ? "AI 제거 활성화" : "원본 자막 유지"}
+                        </span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setRemoveSubtitles(!removeSubtitles)}
+                        className={`w-full py-2 px-3 rounded-xl text-xs font-semibold border transition flex items-center justify-between ${
+                          removeSubtitles
+                            ? "bg-amber-500/10 border-amber-500/50 text-amber-200 shadow-sm"
+                            : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
+                        }`}
+                      >
+                        <span className="text-left truncate pr-2">
+                          원본 자막 삭제 (ai 처리라서 일부 뭉개짐이 있을 수 있음)
+                        </span>
+                        <div
+                          className={`w-8 h-4.5 flex items-center rounded-full p-0.5 transition duration-300 flex-shrink-0 ${
+                            removeSubtitles ? "bg-amber-500 justify-end" : "bg-slate-800 justify-start"
+                          }`}
+                        >
+                          <div className="bg-white w-3.5 h-3.5 rounded-full shadow-md" />
+                        </div>
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 flex items-center justify-between mb-2">
+                        <span>말버릇 / 추임새 자막 정리</span>
+                        <span className={`font-bold ${filterFillers ? "text-emerald-400" : "text-slate-500"}`}>
+                          {filterFillers ? "자동 필터링 (추천)" : "모든 단어 표시"}
+                        </span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setFilterFillers(!filterFillers)}
+                        className={`w-full py-2 px-3 rounded-xl text-xs font-semibold border transition flex items-center justify-between ${
+                          filterFillers
+                            ? "bg-emerald-500/10 border-emerald-500/50 text-emerald-200 shadow-sm"
+                            : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
+                        }`}
+                      >
+                        <span className="text-left truncate pr-2">
+                          추임새/말버릇 제거 (어, 음, 네, 아 등의 단독 팝업 방지)
+                        </span>
+                        <div
+                          className={`w-8 h-4.5 flex items-center rounded-full p-0.5 transition duration-300 flex-shrink-0 ${
+                            filterFillers ? "bg-emerald-500 justify-end" : "bg-slate-800 justify-start"
+                          }`}
+                        >
+                          <div className="bg-white w-3.5 h-3.5 rounded-full shadow-md" />
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="flex justify-end pt-2">
                     <button
                       onClick={handleProceedToTemplate}
@@ -823,6 +930,74 @@ export default function HappyShortsApp() {
                         <div className="bg-white w-3.5 h-3.5 rounded-full shadow-md" />
                       </button>
                     </div>
+
+                    {/* Aspect Ratio Pill */}
+                    <div className="flex items-center gap-1 text-xs text-slate-300 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => setAspectRatio("9:16")}
+                        className={`px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 ${
+                          aspectRatio === "9:16"
+                            ? "bg-indigo-600 text-white shadow-sm"
+                            : "text-slate-400 hover:text-slate-200"
+                        }`}
+                      >
+                        <span>📱 9:16 세로</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAspectRatio("16:9")}
+                        className={`px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 ${
+                          aspectRatio === "16:9"
+                            ? "bg-indigo-600 text-white shadow-sm"
+                            : "text-slate-400 hover:text-slate-200"
+                        }`}
+                      >
+                        <span>🖥️ 16:9 가로</span>
+                      </button>
+                    </div>
+
+                    {/* Subtitle Removal Toggle */}
+                    <button
+                      type="button"
+                      onClick={() => setRemoveSubtitles(!removeSubtitles)}
+                      title="원본 자막 삭제 (ai 처리라서 일부 뭉개짐이 있을 수 있음)"
+                      className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-xl border transition ${
+                        removeSubtitles
+                          ? "bg-amber-500/15 border-amber-500/50 text-amber-300 font-semibold"
+                          : "bg-slate-900/90 border-slate-800 text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      <span>원본 자막 삭제</span>
+                      <div
+                        className={`w-7 h-4 flex items-center rounded-full p-0.5 transition duration-300 ${
+                          removeSubtitles ? "bg-amber-500 justify-end" : "bg-slate-800 justify-start"
+                        }`}
+                      >
+                        <div className="bg-white w-3 h-3 rounded-full shadow-md" />
+                      </div>
+                    </button>
+
+                    {/* Filler Word Removal Toggle */}
+                    <button
+                      type="button"
+                      onClick={() => setFilterFillers(!filterFillers)}
+                      title="추임새/말버릇 제거 (어, 음, 네, 아 등의 단독 팝업 방지)"
+                      className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-xl border transition ${
+                        filterFillers
+                          ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-300 font-semibold"
+                          : "bg-slate-900/90 border-slate-800 text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      <span>말버릇/추임새 정리</span>
+                      <div
+                        className={`w-7 h-4 flex items-center rounded-full p-0.5 transition duration-300 ${
+                          filterFillers ? "bg-emerald-500 justify-end" : "bg-slate-800 justify-start"
+                        }`}
+                      >
+                        <div className="bg-white w-3 h-3 rounded-full shadow-md" />
+                      </div>
+                    </button>
                   </div>
 
                   {/* Right: Proceed Button */}
@@ -1029,12 +1204,73 @@ export default function HappyShortsApp() {
                               </div>
                             </div>
 
+                            {/* Output Settings Summary & Toggles */}
+                            <div className="flex flex-col gap-2 p-3 rounded-xl bg-slate-950/70 border border-slate-800 text-xs">
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-400 font-semibold">출력 화면 비율:</span>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setAspectRatio("9:16")}
+                                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition ${
+                                      aspectRatio === "9:16"
+                                        ? "bg-indigo-600 text-white shadow-sm"
+                                        : "bg-slate-900 text-slate-400 hover:text-slate-200"
+                                    }`}
+                                  >
+                                    📱 9:16 세로 (얼굴 추적)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setAspectRatio("16:9")}
+                                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition ${
+                                      aspectRatio === "16:9"
+                                        ? "bg-indigo-600 text-white shadow-sm"
+                                        : "bg-slate-900 text-slate-400 hover:text-slate-200"
+                                    }`}
+                                  >
+                                    🖥️ 16:9 가로
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between pt-2 border-t border-slate-800/60">
+                                <span className="text-slate-400 font-semibold">원본 자막 처리:</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setRemoveSubtitles(!removeSubtitles)}
+                                  className={`px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1.5 ${
+                                    removeSubtitles
+                                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                                      : "bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200"
+                                  }`}
+                                >
+                                  <span>{removeSubtitles ? "🧹 AI 자막 삭제 적용 중" : "✨ 원본 자막 유지"}</span>
+                                </button>
+                              </div>
+
+                              <div className="flex items-center justify-between pt-2 border-t border-slate-800/60">
+                                <span className="text-slate-400 font-semibold">말버릇 자막 정리:</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setFilterFillers(!filterFillers)}
+                                  className={`px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1.5 ${
+                                    filterFillers
+                                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                                      : "bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200"
+                                  }`}
+                                >
+                                  <span>{filterFillers ? "✨ 말버릇(네/어/음) 정리 켜짐" : "모든 단어 표시"}</span>
+                                </button>
+                              </div>
+                            </div>
+
                             <button
                               onClick={handleStartRender}
                               className="mt-2 w-full py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 via-violet-600 to-rose-600 hover:opacity-90 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition"
                             >
                               <Film className="w-4 h-4" />
-                              선택한 구간으로 9:16 쇼츠 렌더링 시작
+                              선택한 구간으로 {aspectRatio === "16:9" ? "16:9 와이드 영상" : "9:16 쇼츠"} 렌더링 시작
                             </button>
                           </div>
                         )}
@@ -1075,18 +1311,20 @@ export default function HappyShortsApp() {
                 ) : renderedResult ? (
                   /* Finished Shorts Result View */
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                    {/* Left: 9:16 Mobile Shorts Video Player */}
+                    {/* Left: Video Player */}
                     <div className="lg:col-span-5 flex flex-col items-center justify-center">
-                      <div className="w-full max-w-[340px] bg-slate-950 rounded-[36px] p-3 border-4 border-slate-800 shadow-2xl shadow-indigo-500/10">
-                        {/* Notch */}
-                        <div className="w-28 h-4 bg-slate-800 rounded-full mx-auto mb-2" />
-                        <div className="relative aspect-[9/16] rounded-[24px] overflow-hidden bg-black">
+                      <div className={`w-full ${aspectRatio === "16:9" ? "max-w-[560px] rounded-[28px]" : "max-w-[340px] rounded-[36px]"} bg-slate-950 p-3 border-4 border-slate-800 shadow-2xl shadow-indigo-500/10`}>
+                        {/* Notch for 9:16 mobile shorts */}
+                        {aspectRatio === "9:16" && (
+                          <div className="w-28 h-4 bg-slate-800 rounded-full mx-auto mb-2" />
+                        )}
+                        <div className={`relative ${aspectRatio === "16:9" ? "aspect-video rounded-[18px]" : "aspect-[9/16] rounded-[24px]"} overflow-hidden bg-black`}>
                           <video
                             src={renderedResult.stream_url}
                             controls
                             autoPlay
                             loop
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-contain"
                           />
                         </div>
                       </div>

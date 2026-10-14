@@ -1,8 +1,9 @@
 import os
 import re
 import subprocess
+from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from rich.console import Console
 from rich.table import Table
 
@@ -20,6 +21,25 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 def sanitize_filename(name: str) -> str:
     cleaned = re.sub(r'[\\/*?:"<>| ]', "_", name)
     return cleaned[:40].strip("_")
+
+def get_unique_output_paths(output_dir: Path, safe_title: str, clip_id: int) -> Tuple[str, str, str]:
+    """
+    Generate unique non-colliding output paths for MP4, cover thumbnail JPG, and metadata TXT.
+    Prevents overwriting previous runs by incorporating timestamp and duplicate check.
+    """
+    now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_key = f"{safe_title}_{clip_id}_{now_str}"
+
+    counter = 1
+    cand_key = base_key
+    while (output_dir / f"short_{cand_key}.mp4").exists():
+        cand_key = f"{base_key}_{counter}"
+        counter += 1
+
+    out_video = str(output_dir / f"short_{cand_key}.mp4")
+    out_cover = str(output_dir / f"cover_{cand_key}.jpg")
+    out_meta = str(output_dir / f"shorts_info_{cand_key}.txt")
+    return out_video, out_cover, out_meta
 
 def generate_youtube_metadata_file(
     output_txt_path: str,
@@ -89,7 +109,10 @@ class ShortsPipeline:
         normal_color: tuple = (255, 255, 255),
         font_name: str = "black_han_sans",
         show_progress_bar: bool = False,
-        normalize_audio: bool = True
+        normalize_audio: bool = True,
+        aspect_ratio: str = "9:16",
+        remove_subtitles: bool = False,
+        filter_fillers: bool = True
     ):
         self.whisper_model = whisper_model
         self.llm_model = llm_model
@@ -105,6 +128,9 @@ class ShortsPipeline:
         self.font_name = font_name
         self.show_progress_bar = show_progress_bar
         self.normalize_audio = normalize_audio
+        self.aspect_ratio = aspect_ratio
+        self.remove_subtitles = remove_subtitles
+        self.filter_fillers = filter_fillers
 
     def run(
         self,
@@ -251,10 +277,8 @@ class ShortsPipeline:
             m_e, s_e = divmod(int(h.end_time), 60)
             time_str = f"{m_s:02d}:{s_s:02d} ~ {m_e:02d}:{s_e:02d}"
 
-            output_filename = f"short_{safe_title}_{h.id}.mp4"
-            output_path = str(OUTPUT_DIR / output_filename)
-            cover_path = str(OUTPUT_DIR / f"cover_{safe_title}_{h.id}.jpg")
-            meta_txt_path = str(OUTPUT_DIR / f"shorts_info_{safe_title}_{h.id}.txt")
+            output_path, cover_path, meta_txt_path = get_unique_output_paths(OUTPUT_DIR, safe_title, h.id)
+            output_filename = os.path.basename(output_path)
 
             if callback:
                 render_pct = 70.0 + (idx / max(1, num_hl)) * 28.0
@@ -275,13 +299,19 @@ class ShortsPipeline:
                     normal_color=self.normal_color,
                     font_name=self.font_name,
                     show_progress_bar=self.show_progress_bar,
-                    normalize_audio=self.normalize_audio
+                    normalize_audio=self.normalize_audio,
+                    aspect_ratio=self.aspect_ratio,
+                    remove_subtitles=self.remove_subtitles,
+                    filter_fillers=self.filter_fillers
                 )
             else:
+                ratio_label = "16:9 가로" if self.aspect_ratio == "16:9" else "9:16 세로"
+                sub_label = " (원본 자막 AI 제거 적용)" if self.remove_subtitles else ""
                 console.print(f"\n[bold yellow]👉 [클립 #{h.id}] {h.title}[/bold yellow] ({time_str}, {h.duration:.1f}초, [bold red]바이럴 {h.virality_score}점[/bold red])")
+                console.print(f"   • 화면 비율: [bold cyan]{ratio_label}[/bold cyan]{sub_label}")
                 console.print(f"   • 훅 헤드라인: [bold cyan]{h.hook_text}[/bold cyan]")
                 console.print(f"   • 선정 이유: {h.reason}")
-                with console.status(f"[bold magenta]4/4. 9:16 비디오 + 팝업 자막 + 효과 렌더링 중...[/bold magenta]"):
+                with console.status(f"[bold magenta]4/4. {ratio_label} 비디오 + 팝업 자막 + 효과 렌더링 중...[/bold magenta]"):
                     render_short(
                         metadata=metadata,
                         highlight=h,
@@ -298,7 +328,10 @@ class ShortsPipeline:
                         normal_color=self.normal_color,
                         font_name=self.font_name,
                         show_progress_bar=self.show_progress_bar,
-                        normalize_audio=self.normalize_audio
+                        normalize_audio=self.normalize_audio,
+                        aspect_ratio=self.aspect_ratio,
+                        remove_subtitles=self.remove_subtitles,
+                        filter_fillers=self.filter_fillers
                     )
                 console.print(f"  [bold green]✔ 쇼츠 생성 완료:[/bold green] {output_path}")
 

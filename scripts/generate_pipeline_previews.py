@@ -65,11 +65,12 @@ def generate_wysiwyg_preview(template_id: str):
     src_img = Image.open(str(SOURCE_FRAME_PATH)).convert("RGBA")
 
     # 2. Composite video frame according to framing rules
-    if tmpl.layout_type in OVERLAY_LAYOUTS or tmpl.layout_type in ["smart_crop", "interview_talk"]:
-        # 9:16 Center Crop of source video
+    if tmpl.layout_type in OVERLAY_LAYOUTS or tmpl.layout_type in ["smart_crop", "interview_talk", "source_pure"]:
+        # 9:16 Centered Face/Presenter Crop of source video
         sw, sh = src_img.size
         cw = int(sh * 9 / 16)
-        cx = max(0, (sw - cw) // 2)
+        # Center directly on presenter (x ~ 988 in 1920 frame)
+        cx = 685 if sw >= 1300 else max(0, (sw - cw) // 2)
         crop_v = src_img.crop((cx, 0, cx + cw, sh)).resize((canvas_w, canvas_h), Image.Resampling.LANCZOS)
         # Overlay template graphic on top of 9:16 video
         final_canvas = Image.alpha_composite(crop_v, bg_img)
@@ -99,8 +100,7 @@ def generate_wysiwyg_preview(template_id: str):
 
     # 3. Render Sample Subtitles if template supports subtitles
     if tmpl.subtitle_y > 0 and tmpl.subtitle_style != "none":
-        sub_font_file = FONT_BLACK_HAN_SANS if tmpl.font_name == "black_han_sans" else FONT_PRETENDARD
-        f_sub = get_font(sub_font_file, 40)
+        f_sub = get_font(tmpl.font_name, 42)
         draw = ImageDraw.Draw(final_canvas)
         sub_text = "출고 앞두신 분들, 이 설정 꼭 하세요!"
         sy = tmpl.subtitle_y

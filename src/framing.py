@@ -95,7 +95,9 @@ OVERLAY_LAYOUTS = {
     "promo_fitness_gym",
     "youth_tips_pick",
     "drama_weekly_preview",
-    "tesla_fsd_vision"
+    "tesla_fsd_vision",
+    "instagram_reels",
+    "facetime_call"
 }
 
 def build_framing_filter(
@@ -107,15 +109,20 @@ def build_framing_filter(
     end_time: float,
     video_box: Optional[Tuple[int, int, int, int]] = None,
     bg_input_idx: int = 1,
-    enable_punch_in_zoom: bool = True
+    enable_punch_in_zoom: bool = True,
+    aspect_ratio: str = "9:16",
+    remove_subtitles: bool = False
 ) -> Tuple[str, str]:
     """
-    Build FFmpeg video filtergraph string for 9:16 layout.
+    Build FFmpeg video filtergraph string for 9:16 or 16:9 layout.
     Supports:
+    - Aspect Ratio: "9:16" (1080x1920) or "16:9" (1920x1080)
+    - Face tracking center adjustment for horizontal (16:9) sources converted to 9:16
+    - Source burned-in subtitle removal via spatial delogo inpainting
     - Graphic template placement (video_box: vx, vy, vw, vh onto template background)
-    - Fullscreen Overlay templates (video smart-cropped to 9:16 with transparent HUD/Stickers overlay)
+    - Fullscreen Overlay templates (video smart-cropped with transparent HUD/Stickers overlay)
     - Dynamic Punch-in Zoom (Submagic-style 1.10x focal zoom during middle explanation)
-    - smart_crop (AI face tracking 9:16)
+    - smart_crop (AI face tracking)
     - blur_background (box-blurred video backdrop)
     - studio_card (floating card fallback)
     Returns: (filter_str, final_label)
@@ -123,12 +130,61 @@ def build_framing_filter(
     dur = max(1.0, end_time - start_time)
     z_start = round(dur * 0.25, 1)
     z_end = round(dur * 0.65, 1)
-    # 1.10x center punch-in zoom during middle climax (if enabled and clip >= 15s)
+
+    # 1. Source burned-in subtitle removal (delogo inpainting filter)
+    delogo_prefix = ""
+    v_in = "[0:v]"
+    if remove_subtitles:
+        if orig_width > orig_height:
+            # Horizontal source: subtitle band is typically at bottom 16% (y: 78% ~ 94%)
+            sub_x = int(orig_width * 0.10)
+            sub_w = int(orig_width * 0.80)
+            sub_y = int(orig_height * 0.78)
+            sub_h = int(orig_height * 0.16)
+        else:
+            # Vertical source: subtitle band is typically at y: 72% ~ 87%
+            sub_x = int(orig_width * 0.06)
+            sub_w = int(orig_width * 0.88)
+            sub_y = int(orig_height * 0.72)
+            sub_h = int(orig_height * 0.15)
+
+        # Ensure even coordinates for YUV chroma alignment
+        sub_x = max(0, sub_x - (sub_x % 2))
+        sub_y = max(0, sub_y - (sub_y % 2))
+        sub_w = max(10, min(orig_width - sub_x, sub_w - (sub_w % 2)))
+        sub_h = max(10, min(orig_height - sub_y, sub_h - (sub_h % 2)))
+
+        delogo_prefix = f"[0:v]delogo=x={sub_x}:y={sub_y}:w={sub_w}:h={sub_h}[v_nosub];"
+        v_in = "[v_nosub]"
+
+    # 2. Dynamic Punch-in Zoom (1.10x center punch-in during middle climax)
     zoom_filter = ""
     if enable_punch_in_zoom and dur >= 15.0:
         zoom_filter = f"crop='if(between(t,{z_start},{z_end}),iw/1.10,iw)':'if(between(t,{z_start},{z_end}),ih/1.10,ih)':(iw-ow)/2:(ih-oh)/2,"
 
-    # 1. Fullscreen Overlay Templates (9:16 Smart Crop Video + Floating Stickers/HUD on top)
+    # 3. 16:9 Landscape Video Canvas (1920x1080)
+    if aspect_ratio == "16:9":
+        if orig_width >= orig_height:
+            # Source is already horizontal: scale directly to 1920x1080 without cutting sides
+            vf = (
+                f"{delogo_prefix}"
+                f"{v_in}{zoom_filter}scale=1920:1080:force_original_aspect_ratio=decrease,"
+                f"pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black[base]"
+            )
+            return vf, "base"
+        else:
+            # Source is vertical (9:16): center vertical video on blurred 1920x1080 background
+            vf = (
+                f"{delogo_prefix}"
+                f"{v_in}scale=1920:1080:force_original_aspect_ratio=increase,"
+                f"crop=1920:1080,boxblur=30:8,eq=brightness=-0.16:contrast=1.06[bg];"
+                f"{v_in}{zoom_filter}scale=-2:1080:force_original_aspect_ratio=decrease[fg];"
+                f"[bg][fg]overlay=(W-w)/2:0[base]"
+            )
+            return vf, "base"
+
+    # 4. 9:16 Vertical Shorts Canvas (1080x1920)
+    # Fullscreen Overlay Templates (9:16 Smart Crop Video + Floating Stickers/HUD on top)
     if layout_mode in OVERLAY_LAYOUTS:
         face_x = detect_face_center_x(video_path, start_time, end_time)
         crop_w = int(orig_height * 9 / 16)
@@ -141,17 +197,19 @@ def build_framing_filter(
             x = (orig_width - crop_w) // 2
 
         vf = (
-            f"[0:v]{zoom_filter}crop={crop_w}:{orig_height}:{x}:0,scale=1080:1920[v_base];"
+            f"{delogo_prefix}"
+            f"{v_in}{zoom_filter}crop={crop_w}:{orig_height}:{x}:0,scale=1080:1920[v_base];"
             f"[v_base][{bg_input_idx}:v]overlay=0:0[base]"
         )
         return vf, "base"
 
-    # 2. Boxed Window Templates (Video placed into a specified canvas coordinate)
+    # Boxed Window Templates (Video placed into a specified canvas coordinate)
     if video_box is not None and layout_mode not in ["smart_crop", "blur_background"]:
         vx, vy, vw, vh = video_box
-        # Scale to fit box preserving aspect ratio, pad with black if needed
         vf = (
-            f"[0:v]{zoom_filter}scale={vw}:{vh}:force_original_aspect_ratio=decrease,pad={vw}:{vh}:(ow-iw)/2:(oh-ih)/2:color=black,format=rgba[fg];"
+            f"{delogo_prefix}"
+            f"{v_in}{zoom_filter}scale={vw}:{vh}:force_original_aspect_ratio=decrease,"
+            f"pad={vw}:{vh}:(ow-iw)/2:(oh-ih)/2:color=black,format=rgba[fg];"
             f"[{bg_input_idx}:v][fg]overlay={vx}:{vy}[base]"
         )
         return vf, "base"
@@ -167,15 +225,16 @@ def build_framing_filter(
         else:
             x = (orig_width - crop_w) // 2
 
-        vf = f"[0:v]{zoom_filter}crop={crop_w}:{orig_height}:{x}:0,scale=1080:1920[base]"
+        vf = f"{delogo_prefix}{v_in}{zoom_filter}crop={crop_w}:{orig_height}:{x}:0,scale=1080:1920[base]"
         return vf, "base"
 
     elif layout_mode == "blur_background":
         vf = (
-            "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
-            "crop=1080:1920,boxblur=30:8,eq=brightness=-0.16:contrast=1.06[bg];"
-            f"[0:v]{zoom_filter}scale=1080:-2:force_original_aspect_ratio=decrease[fg];"
-            "[bg][fg]overlay=(W-w)/2:(H-h)/2[base]"
+            f"{delogo_prefix}"
+            f"{v_in}scale=1080:1920:force_original_aspect_ratio=increase,"
+            f"crop=1080:1920,boxblur=30:8,eq=brightness=-0.16:contrast=1.06[bg];"
+            f"{v_in}{zoom_filter}scale=1080:-2:force_original_aspect_ratio=decrease[fg];"
+            f"[bg][fg]overlay=(W-w)/2:(H-h)/2[base]"
         )
         return vf, "base"
 
@@ -183,18 +242,25 @@ def build_framing_filter(
         card_w = 1000
         card_h = int(card_w * 9 / 16)  # 562
         vf = (
+            f"{delogo_prefix}"
             f"color=c=0x0B0D14:s=1080x1920[canvas];"
-            f"[0:v]scale={card_w}:{card_h}:force_original_aspect_ratio=decrease,format=rgba[fg];"
+            f"{v_in}scale={card_w}:{card_h}:force_original_aspect_ratio=decrease,format=rgba[fg];"
             f"[canvas][fg]overlay=(W-w)/2:520[base]"
         )
         return vf, "base"
 
     else:
-        # Default fallback to center crop
+        # Default fallback: smart crop centering on face if horizontal source
+        face_x = detect_face_center_x(video_path, start_time, end_time)
         crop_w = int(orig_height * 9 / 16)
         crop_w = min(crop_w, orig_width)
-        x = (orig_width - crop_w) // 2
-        vf = f"[0:v]{zoom_filter}crop={crop_w}:{orig_height}:{x}:0,scale=1080:1920[base]"
+        if face_x is not None:
+            x = int(face_x - crop_w / 2)
+            x = max(0, min(orig_width - crop_w, x))
+        else:
+            x = (orig_width - crop_w) // 2
+
+        vf = f"{delogo_prefix}{v_in}{zoom_filter}crop={crop_w}:{orig_height}:{x}:0,scale=1080:1920[base]"
         return vf, "base"
 
 

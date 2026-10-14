@@ -14,13 +14,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
+from datetime import datetime
 from src.models import VideoMetadata, Transcript, Highlight
 from src.templates import TEMPLATES, get_template, ShortsTemplate
 from src.downloader import prepare_source
 from src.transcriber import transcribe_video
 from src.highlighter import detect_highlights
 from src.renderer import render_short
-from src.pipeline import generate_youtube_metadata_file, sanitize_filename
+from src.pipeline import generate_youtube_metadata_file, sanitize_filename, get_unique_output_paths
 
 app = FastAPI(
     title="Happy Shorts AI Studio API",
@@ -84,6 +85,9 @@ class RenderRequest(BaseModel):
     subtitle_style: Optional[str] = None
     show_badge: bool = True
     show_subtitles: bool = True
+    aspect_ratio: str = Field(default="9:16", description="영상 화면 비율 (9:16 또는 16:9)")
+    remove_subtitles: bool = Field(default=False, description="원본 자막 삭제 (ai 처리라서 일부 뭉개짐이 있을 수 있음)")
+    filter_fillers: bool = Field(default=True, description="추임새/말버릇(네, 어, 음 등) 자막 자동 제거")
     target_filename: Optional[str] = None
 
 # Endpoints
@@ -131,6 +135,7 @@ def list_templates():
             "active_color": list(t.active_color),
             "normal_color": list(t.normal_color),
             "font_name": t.font_name,
+            "sub_font_name": getattr(t, "sub_font_name", "pretendard"),
             "video_box": list(t.video_box)
         })
     return {"templates": result}
@@ -160,8 +165,9 @@ def list_outputs():
         if f.is_file():
             stat = f.stat()
             stem = f.stem
+            base_key = stem[6:] if stem.startswith("short_") else stem
             # Matching txt file
-            txt_path = OUTPUT_DIR / f"shorts_info_{stem.replace('short_', '')}.txt"
+            txt_path = OUTPUT_DIR / f"shorts_info_{base_key}.txt"
             txt_fallback = OUTPUT_DIR / f"{stem}.txt"
             seo_info = ""
             if txt_path.exists():
@@ -176,7 +182,7 @@ def list_outputs():
                     pass
 
             # Matching cover jpg
-            cover_path = OUTPUT_DIR / f"cover_{stem.replace('short_', '')}.jpg"
+            cover_path = OUTPUT_DIR / f"cover_{base_key}.jpg"
             cover_url = f"/media/output/{cover_path.name}" if cover_path.exists() else None
 
             items.append({
@@ -332,21 +338,38 @@ async def run_render_task(job_id: str, req: RenderRequest):
             tpl.badge_style = "none"
 
         safe_title = sanitize_filename(metadata.title)
-        out_filename = req.target_filename or f"short_{safe_title}_{h_obj.id}.mp4"
-        out_path = OUTPUT_DIR / out_filename
-        out_txt_path = OUTPUT_DIR / f"shorts_info_{safe_title}_{h_obj.id}.txt"
+        if req.target_filename:
+            target_stem = Path(req.target_filename).stem
+            counter = 1
+            cand_stem = target_stem
+            while (OUTPUT_DIR / f"{cand_stem}.mp4").exists():
+                cand_stem = f"{target_stem}_{counter}"
+                counter += 1
+            out_filename = f"{cand_stem}.mp4"
+            base_key = cand_stem[6:] if cand_stem.startswith("short_") else cand_stem
+            out_path = OUTPUT_DIR / out_filename
+            cover_path = OUTPUT_DIR / f"cover_{base_key}.jpg"
+            out_txt_path = OUTPUT_DIR / f"shorts_info_{base_key}.txt"
+        else:
+            out_video_str, out_cover_str, out_meta_str = get_unique_output_paths(OUTPUT_DIR, safe_title, h_obj.id)
+            out_path = Path(out_video_str)
+            out_filename = out_path.name
+            cover_path = Path(out_cover_str)
+            out_txt_path = Path(out_meta_str)
 
+        ratio_tag = "16:9 가로" if req.aspect_ratio == "16:9" else "9:16 세로"
+        sub_tag = " (원본 자막 AI 제거 적용)" if req.remove_subtitles else ""
         await emit_job_event(job_id, {
             "status": "running",
             "progress": 35,
-            "message": f"9:16 비주얼 리프레임 & 템플릿 [{tpl.name}] 합성 중..."
+            "message": f"{ratio_tag} 비주얼 리프레임 & 템플릿 [{tpl.name}] 합성 중...{sub_tag}"
         })
 
         # Render clip
         render_res = await loop.run_in_executor(
             None,
             lambda: render_short(
-                video_path=metadata.local_path,
+                metadata=metadata,
                 highlight=h_obj,
                 transcript=transcript,
                 template=tpl,
@@ -356,7 +379,10 @@ async def run_render_task(job_id: str, req: RenderRequest):
                 active_color=tpl.active_color,
                 normal_color=tpl.normal_color,
                 font_name=tpl.font_name,
-                normalize_audio=True
+                normalize_audio=True,
+                aspect_ratio=req.aspect_ratio,
+                remove_subtitles=req.remove_subtitles,
+                filter_fillers=req.filter_fillers
             )
         )
 
@@ -381,7 +407,18 @@ async def run_render_task(job_id: str, req: RenderRequest):
         if out_txt_path.exists():
             seo_content = out_txt_path.read_text(encoding="utf-8")
 
-        cover_path = OUTPUT_DIR / f"cover_{safe_title}_{h_obj.id}.jpg"
+        # Extract high-res cover thumbnail
+        try:
+            await loop.run_in_executor(
+                None,
+                lambda: subprocess.run([
+                    "ffmpeg", "-y", "-ss", "00:00:01.5", "-i", str(out_path),
+                    "-vframes", "1", "-q:v", "2", str(cover_path)
+                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            )
+        except Exception:
+            pass
+
         cover_url = f"/media/output/{cover_path.name}" if cover_path.exists() else None
 
         await emit_job_event(job_id, {

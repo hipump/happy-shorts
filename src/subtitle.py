@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from typing import List
 from src.models import Transcript, Highlight, Word
+from src.effects import filter_filler_words
 
 def format_ass_time(seconds: float) -> str:
     """Format seconds into ASS timestamp H:MM:SS.cc"""
@@ -23,7 +24,8 @@ def generate_ass_subtitles(
     inactive_color: str = "&H00FFFFFF&", # Pure White
     outline_color: str = "&H00000000&",  # Black
     margin_v: int = 380,                 # Safe area above shorts interface
-    words_per_line: int = 4
+    words_per_line: int = 4,
+    filter_fillers: bool = True
 ) -> str:
     """
     Generate viral shorts-style ASS subtitles with active-word pop/highlight animation.
@@ -58,6 +60,9 @@ def generate_ass_subtitles(
                     start=round(rel_start, 2),
                     end=round(rel_end, 2)
                 ))
+
+    if filter_fillers:
+        clip_words = filter_filler_words(clip_words)
 
     # 2. Chunk words into short, rapid punchy groups (3-4 words per group)
     groups = []

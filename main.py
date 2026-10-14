@@ -94,7 +94,7 @@ def interactive_wizard():
 
     # Step 2: 영상 몇 개 생성할 것인가
     clips_choice = questionary.select(
-        "스텝 2/5. 생성할 쇼츠(하이라이트) 개수를 선택하세요:",
+        "스텝 2/7. 생성할 쇼츠(하이라이트) 개수를 선택하세요:",
         choices=[
             "1개 (가장 추천하는 핵심 하이라이트)",
             "2개 (서로 다른 2개 구간 추출)",
@@ -116,17 +116,48 @@ def interactive_wizard():
         custom_c = questionary.text("원하는 개수를 숫자로 입력하세요:", default="1").ask()
         clips_count = int(custom_c) if custom_c and custom_c.isdigit() else 1
 
-    # Step 3: 디자인 템플릿 선택 (미리캔버스 / 캔바 / 알파컷 스타일)
-    tpl_choice = questionary.select(
-        "스텝 3/5. 적용할 쇼츠 디자인 템플릿을 선택하세요 (미리캔버스·캔바·알파컷 기반):",
+    # Step 3: 영상 화면 비율 선택 (세로 9:16 vs 가로 16:9)
+    aspect_choice = questionary.select(
+        "스텝 3/7. 영상의 화면 비율을 선택하세요:",
         choices=[
-            "💻 1) [정보·리뷰·테크] 인터넷창 / macOS 브라우저 창 썸네일형 (트래픽라이트 🔴🟡🟢 + 3D 폰트 + 해시태그)",
-            "🚨 2) [뉴스·속보·이슈] 미리캔버스 뉴스 포털 & 긴급 속보형 (Clean 화이트 + 방송 레드 헤더 + 형광펜 헤드라인)",
-            "✨ 3) [매거진·인포·네온] 캔바 & 알파컷 인포 매거진 템플릿 (다크 슬레이트 + 네온 사이언 보더 + 요약 카드)",
-            "💡 4) [교육·강의·미니멀] 캔바 모던 클린 템플릿 (모던 슬레이트 + 프리텐다드 서체 자막)",
-            "👤 5) [인터뷰·토크] 9:16 인물 추적 풀스크린 (호르모지 스타일)",
-            "🎞 6) [순정 원본 보존] 자체 자막 유지 템플릿 (영상 원본 100% 보존, 추가 자막 없음)",
-            "🎨 7) [세부 맞춤 설정] 레이아웃, 자막 스타일 직접 세부 설정"
+            "📱 1) 세로 화면 (9:16 쇼츠/릴스/틱톡) [가로 원본 시 AI 얼굴 중심 자동 리프레임]",
+            "🖥️ 2) 가로 화면 (16:9 일반 영상/유튜브 와이드)"
+        ]
+    ).ask()
+
+    if not aspect_choice:
+        sys.exit(0)
+
+    aspect_ratio = "16:9" if "16:9" in aspect_choice or "가로" in aspect_choice else "9:16"
+
+    # Step 4: 원본 영상 자막 삭제 여부 선택
+    delogo_choice = questionary.select(
+        "스텝 4/7. 원본 영상에 포함된 자막을 제거하시겠습니까?",
+        choices=[
+            "✨ 1) 원본 영상 그대로 유지 (자막 제거 안 함)",
+            "🧹 2) 원본 자막 삭제 (ai 처리라서 일부 뭉개짐이 있을 수 있음)"
+        ]
+    ).ask()
+
+    if not delogo_choice:
+        sys.exit(0)
+
+    remove_subtitles = "삭제" in delogo_choice
+
+    # Step 5: 디자인 템플릿 선택 (미리캔버스 / 캔바 / 알파컷 스타일)
+    tpl_choice = questionary.select(
+        "스텝 5/7. 적용할 쇼츠 디자인 템플릿을 선택하세요 (미리캔버스·캔바·알파컷 기반):",
+        choices=[
+            "💻 1) [정보·리뷰·테크] 인터넷창 / macOS 브라우저 창 썸네일형 (해바라기 볼드 + 트래픽라이트 🔴🟡🟢)",
+            "🚨 2) [뉴스·속보·이슈] 속보 포털 & 긴급 특보 템플릿 (가석원 초헤비 볼드 + 방송 레드 헤더)",
+            "✨ 3) [매거진·인포·네온] 다크 네온 매거진 템플릿 (네온 발광 글로우 아트 + 요약 카드)",
+            "🎨 4) [밈·웹툰·팝아트] 페페 & 카툰 3D 팝아트 템플릿 (베이글 팻 원 3D 블록 조각 타이포)",
+            "💥 5) [파격·이슈·충격] 기랑해랑 잉크 번짐 파격 그래픽 (먹물 번짐 펑크 서체)",
+            "🖌 6) [스토리·무협·다큐] 묵직한 붓글씨 K-캘리그래피 (나눔붓글씨 캘리그래피 아트)",
+            "💡 7) [교육·강의·미니멀] 캔바 모던 클린 템플릿 (프리텐다드 서체 자막)",
+            "👤 8) [인터뷰·토크] 9:16 인물 추적 풀스크린 (배민 도현 호르모지 스타일)",
+            "🎞 9) [순정 원본 보존] 자체 자막 유지 템플릿 (영상 원본 100% 보존, 추가 자막 없음)",
+            "⚙️ 10) [세부 맞춤 설정] 레이아웃, 자막 스타일 직접 세부 설정"
         ]
     ).ask()
 
@@ -139,6 +170,12 @@ def interactive_wizard():
         template = get_template("news_portal")
     elif "매거진" in tpl_choice or "네온" in tpl_choice:
         template = get_template("neon_magazine")
+    elif "웹툰" in tpl_choice or "카툰" in tpl_choice or "3D 팝아트" in tpl_choice:
+        template = get_template("meme_cartoon")
+    elif "기랑해랑" in tpl_choice or "파격" in tpl_choice:
+        template = get_template("kirang_shock")
+    elif "붓글씨" in tpl_choice or "캘리그래피" in tpl_choice:
+        template = get_template("brush_dynasty")
     elif "인터넷창" in tpl_choice or "브라우저" in tpl_choice:
         template = get_template("browser_window")
     elif "인터뷰" in tpl_choice:
@@ -174,7 +211,7 @@ def interactive_wizard():
             subtitle_y=1120
         )
 
-    # Step 4: 자막(캡션) 생성 여부 및 스타일 선택
+    # Step 6: 자막(캡션) 생성 여부 및 스타일 선택
     default_sub_idx = 0
     if template.subtitle_style == "none":
         default_sub_idx = 2
@@ -188,7 +225,7 @@ def interactive_wizard():
     ]
 
     sub_choice = questionary.select(
-        "스텝 4/5. 자막(캡션) 생성 여부 및 스타일을 선택하세요:",
+        "스텝 6/7. 자막(캡션) 생성 여부 및 스타일을 선택하세요:",
         choices=sub_choices,
         default=sub_choices[default_sub_idx]
     ).ask()
@@ -208,9 +245,9 @@ def interactive_wizard():
 
     template.subtitle_style = sub_style
 
-    # Step 5: 쇼츠 목표 길이
+    # Step 7: 쇼츠 목표 길이
     dur_choice = questionary.select(
-        "스텝 5/5. 쇼츠 목표 길이를 선택하세요:",
+        "스텝 7/7. 쇼츠 목표 길이를 선택하세요:",
         choices=[
             "⏱ 1) 30초 ~ 50초 (유튜브 쇼츠 표준 추천)",
             "⚡ 2) 20초 ~ 35초 (짧고 빠른 템포)",
@@ -225,7 +262,9 @@ def interactive_wizard():
         target_dur = (30, 50)
 
     sub_desc = "바이럴 키네틱 자막" if sub_style == "viral_pop" else ("클린 미니멀 자막" if sub_style == "clean_minimal" else "자막 생성 안 함")
-    console.print(f"\n[bold green]✔ [{template.name}] 템플릿 & [{sub_desc}] 설정 완료! 쇼츠 생성을 시작합니다.[/bold green]\n")
+    ratio_desc = "16:9 가로 와이드" if aspect_ratio == "16:9" else "9:16 세로 쇼츠 (얼굴 자동 추적)"
+    delogo_desc = " | 원본 자막 AI 제거" if remove_subtitles else ""
+    console.print(f"\n[bold green]✔ [{ratio_desc}{delogo_desc}] & [{template.name}] 템플릿 & [{sub_desc}] 설정 완료! 쇼츠 생성을 시작합니다.[/bold green]\n")
 
     # 실행
     run_with_progress(
@@ -235,6 +274,8 @@ def interactive_wizard():
         target_dur=target_dur,
         show_subtitles=show_subtitles,
         subtitle_style=sub_style,
+        aspect_ratio=aspect_ratio,
+        remove_subtitles=remove_subtitles,
         interactive_preview=True
     )
 
@@ -245,6 +286,8 @@ def run_with_progress(
     target_dur: tuple[int, int],
     show_subtitles: bool = True,
     subtitle_style: str = "viral_pop",
+    aspect_ratio: str = "9:16",
+    remove_subtitles: bool = False,
     interactive_preview: bool = True
 ):
     pipeline = ShortsPipeline(
@@ -261,7 +304,9 @@ def run_with_progress(
         normal_color=template.normal_color,
         font_name=template.font_name,
         show_progress_bar=False,
-        normalize_audio=True
+        normalize_audio=True,
+        aspect_ratio=aspect_ratio,
+        remove_subtitles=remove_subtitles
     )
 
     results = pipeline.run(
@@ -280,7 +325,7 @@ def run_with_progress(
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="🎬 유튜브/로컬 영상 -> 9:16 쇼츠 자동 변환기",
+        description="🎬 유튜브/로컬 영상 -> 9:16 또는 16:9 쇼츠/와이드 영상 자동 변환기",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument("source", nargs="?", help="유튜브 URL 또는 파일 경로 (생략 시 대화형 마법사 실행)")
@@ -288,6 +333,8 @@ def parse_args():
     parser.add_argument("-c", "--clips", type=int, default=1, help="생성할 쇼츠 개수")
     parser.add_argument("-t", "--template", choices=list(TEMPLATES.keys()), default="tech_review", help="디자인 템플릿")
     parser.add_argument("-l", "--layout", choices=["studio_card", "smart_crop", "blur_background", "center_crop"], default=None, help="레이아웃 오버라이드")
+    parser.add_argument("--aspect-ratio", choices=["9:16", "16:9"], default="9:16", help="화면 비율 (9:16 세로 쇼츠 또는 16:9 가로 와이드)")
+    parser.add_argument("--remove-subtitles", action="store_true", help="원본 자막 삭제 (ai 처리라서 일부 뭉개짐이 있을 수 있음)")
     parser.add_argument("-w", "--whisper", default="large-v3-turbo", choices=["base", "small", "medium", "large-v3-turbo"])
     parser.add_argument("-m", "--llm", default="qwen2.5:14b", help="Ollama 로컬 모델")
     parser.add_argument("--no-badge", action="store_true", help="상단 훅 뱃지 끄기")
@@ -332,7 +379,9 @@ def main():
         normal_color=tpl.normal_color,
         font_name=tpl.font_name,
         show_progress_bar=False,
-        normalize_audio=True
+        normalize_audio=True,
+        aspect_ratio=args.aspect_ratio,
+        remove_subtitles=args.remove_subtitles
     )
 
     try:
