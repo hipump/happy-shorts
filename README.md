@@ -33,16 +33,23 @@
    - **2단 구조 헤드라인**: 1단(상황/맥락) + 2단(강렬한 후킹 펀치라인)으로 시선 즉각 집중
    - **실제 그래픽 칩 & 스티커**: 텍스트 폰트 깨짐 없는 깔끔한 벡터 배지와 뱃지 칩
 4. **AI 대본 기반 스마트 하이라이트 & 단어 싱크 자막**
-   - `faster-whisper` 밀리초 단위 단어 음성 인식 (STT 캐싱 지원)
-   - 로컬 **Ollama (`qwen2.5:7b`, `EEVE-Korean` 등)** 기반 몰입도 높은 구간 자동 선정
+   - `faster-whisper` 밀리초 단위 단어 음성 인식 (기본: `large-v3-turbo`, STT 캐싱 지원)
+   - 로컬 **Ollama (`qwen2.5:14b`, `EEVE-Korean` 등)** 기반 몰입도 높은 구간 자동 선정
    - EBU R128 (-14 LUFS) 표준 모바일 오디오 노멀라이제이션
 
 ---
 
-## 🚀 빠른 시작 가이드 (대화형 마법사)
+## 🚀 빠른 시작 가이드
 
-복잡한 옵션을 외울 필요 없이, 터미널에서 **`./run.sh`** 명령어 한 줄만 입력하면 친절한 대화형 보기 화면이 실행됩니다:
+### 1) 🌐 웹 GUI 대시보드 (추천: 브라우저에서 편리하게 사용)
+브라우저에서 유튜브 미리보기, 템플릿 카드 선택, OpusClip 스타일 AI 바이럴 점수 및 구간 트림, 스마트폰 쇼츠 뷰어로 시청하고 싶다면:
+```bash
+./run_web.sh
+```
+실행 시 자동으로 웹 브라우저(`http://localhost:3000`)가 열립니다.
 
+### 2) 💻 터미널 대화형 마법사 (CLI 모드)
+터미널에서 질의응답 형태로 빠르게 실행하고 싶다면:
 ```bash
 ./run.sh
 ```
@@ -96,8 +103,8 @@
 | `--clips` | `-c` | `1` | 생성할 하이라이트 쇼츠 개수 (1개 이상) |
 | `--template` | `-t` | `browser_window` | 디자인 템플릿 (`browser_window`, `news_portal`, `neon_magazine`, `minimal_edu`, `interview_talk`, `source_pure`) |
 | `--layout` | `-l` | None | 레이아웃 수동 오버라이드 (`smart_crop`, `blur_background`, `studio_card`) |
-| `--whisper` | `-w` | `small` | 음성인식 모델 크기 (`base`, `small`, `medium`, `large-v3-turbo`) |
-| `--llm` | `-m` | `qwen2.5:7b` | 하이라이트 분석에 사용할 Ollama 로컬 모델 |
+| `--whisper` | `-w` | `large-v3-turbo` | 음성인식 모델 크기 (`base`, `small`, `medium`, `large-v3-turbo`) |
+| `--llm` | `-m` | `qwen2.5:14b` | 하이라이트 분석에 사용할 Ollama 로컬 모델 |
 | `--min-dur` | - | `30` | 하이라이트 최소 길이 (초) |
 | `--max-dur` | - | `55` | 하이라이트 최대 길이 (초) |
 | `--no-subtitles` | - | `False` | 자막(캡션) 생성 끄기 |

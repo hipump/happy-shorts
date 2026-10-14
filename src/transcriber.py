@@ -33,7 +33,7 @@ def extract_audio(video_path: str, output_wav: str) -> str:
 
 def transcribe_video(
     video_path: str,
-    model_size: str = "small",
+    model_size: str = "large-v3-turbo",
     device: str = "cpu",
     compute_type: str = "int8"
 ) -> Transcript:

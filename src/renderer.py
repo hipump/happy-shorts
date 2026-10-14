@@ -91,32 +91,7 @@ def render_short(
     next_input_idx = 1
 
     # 2. Template Background or Smart Crop
-    if eff_layout in ["news_portal", "browser_window", "neon_magazine", "minimal_edu", "source_pure"]:
-        # Pre-render full graphic background
-        bg_png = str(clip_temp_dir / "template_bg.png")
-        render_template_background(
-            template=template,
-            highlight=highlight,
-            metadata=metadata,
-            output_path=bg_png
-        )
-        input_args.extend(["-loop", "1", "-t", str(duration), "-i", bg_png])
-        bg_idx = next_input_idx
-        next_input_idx += 1
-
-        base_filter, current_label = build_framing_filter(
-            layout_mode=eff_layout,
-            orig_width=metadata.width,
-            orig_height=metadata.height,
-            video_path=metadata.local_path,
-            start_time=start_time,
-            end_time=end_time,
-            video_box=template.video_box,
-            bg_input_idx=bg_idx
-        )
-        filter_chains.append(base_filter)
-
-    elif eff_layout == "smart_crop":
+    if eff_layout == "smart_crop":
         base_filter, current_label = build_framing_filter(
             layout_mode="smart_crop",
             orig_width=metadata.width,
@@ -143,16 +118,28 @@ def render_short(
             next_input_idx += 1
             filter_chains.append(f"[{current_label}][{badge_idx}:v]overlay=0:0:enable='lte(t,3.5)'[v_badge]")
             current_label = "v_badge"
-
     else:
-        # Generic studio card fallback
+        # Pre-render full graphic background for all template layouts!
+        bg_png = str(clip_temp_dir / "template_bg.png")
+        render_template_background(
+            template=template,
+            highlight=highlight,
+            metadata=metadata,
+            output_path=bg_png
+        )
+        input_args.extend(["-loop", "1", "-t", str(duration), "-i", bg_png])
+        bg_idx = next_input_idx
+        next_input_idx += 1
+
         base_filter, current_label = build_framing_filter(
-            layout_mode="studio_card",
+            layout_mode=eff_layout,
             orig_width=metadata.width,
             orig_height=metadata.height,
             video_path=metadata.local_path,
             start_time=start_time,
-            end_time=end_time
+            end_time=end_time,
+            video_box=template.video_box,
+            bg_input_idx=bg_idx
         )
         filter_chains.append(base_filter)
 

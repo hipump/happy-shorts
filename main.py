@@ -20,7 +20,7 @@ console = Console()
 def print_banner():
     banner_text = (
         "[bold yellow]🎬 Happy Shorts - AI 유튜브/로컬 영상 쇼츠 자동 변환기[/bold yellow]\n"
-        "[dim]100% 로컬 무료 구동 | Qwen2.5 AI 하이라이트 | 단어별 팝업 자막 | 9:16 비주얼 리프레임[/dim]"
+        "[dim]100% 로컬 무료 구동 | Qwen2.5-14B AI 하이라이트 | Whisper Large-v3-Turbo 자막 | 9:16 비주얼 리프레임[/dim]"
     )
     console.print(Panel(banner_text, border_style="bold cyan", expand=False))
 
@@ -248,8 +248,8 @@ def run_with_progress(
     interactive_preview: bool = True
 ):
     pipeline = ShortsPipeline(
-        whisper_model="small",
-        llm_model="qwen2.5:7b",
+        whisper_model="large-v3-turbo",
+        llm_model="qwen2.5:14b",
         template=template,
         layout_mode=template.layout_type,
         show_badge=template.badge_style != "none",
@@ -288,8 +288,8 @@ def parse_args():
     parser.add_argument("-c", "--clips", type=int, default=1, help="생성할 쇼츠 개수")
     parser.add_argument("-t", "--template", choices=list(TEMPLATES.keys()), default="tech_review", help="디자인 템플릿")
     parser.add_argument("-l", "--layout", choices=["studio_card", "smart_crop", "blur_background", "center_crop"], default=None, help="레이아웃 오버라이드")
-    parser.add_argument("-w", "--whisper", default="small", choices=["base", "small", "medium", "large-v3-turbo"])
-    parser.add_argument("-m", "--llm", default="qwen2.5:7b", help="Ollama 로컬 모델")
+    parser.add_argument("-w", "--whisper", default="large-v3-turbo", choices=["base", "small", "medium", "large-v3-turbo"])
+    parser.add_argument("-m", "--llm", default="qwen2.5:14b", help="Ollama 로컬 모델")
     parser.add_argument("--no-badge", action="store_true", help="상단 훅 뱃지 끄기")
     parser.add_argument("--no-subtitles", action="store_true", help="자막(캡션) 생성 끄기")
     parser.add_argument("--subtitle-style", choices=["viral_pop", "clean_minimal", "none"], default=None, help="자막 스타일 오버라이드")

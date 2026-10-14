@@ -75,8 +75,8 @@ def generate_youtube_metadata_file(
 class ShortsPipeline:
     def __init__(
         self,
-        whisper_model: str = "small",
-        llm_model: str = "qwen2.5:7b",
+        whisper_model: str = "large-v3-turbo",
+        llm_model: str = "qwen2.5:14b",
         template: Optional[ShortsTemplate] = None,
         template_id: str = "browser_window",
         layout_mode: Optional[str] = None,

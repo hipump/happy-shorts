@@ -188,7 +188,7 @@ def summarize_clip_content(
     start_time: float,
     end_time: float,
     title: str = "",
-    model_name: str = "qwen2.5:7b"
+    model_name: str = "qwen2.5:14b"
 ) -> List[str]:
     """
     Extracts 2 concrete, factual summary takeaway points of what is taught or explained
@@ -343,7 +343,7 @@ def fallback_heuristic_highlights(
 
 def detect_highlights(
     transcript: Transcript,
-    model_name: str = "qwen2.5:7b",
+    model_name: str = "qwen2.5:14b",
     max_count: int = 1,
     target_duration_range: tuple[int, int] = (30, 50),
     video_path: Optional[str] = None

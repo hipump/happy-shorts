@@ -89,6 +89,15 @@ def detect_face_center_x(
         cap.release()
     return None
 
+OVERLAY_LAYOUTS = {
+    "vlog_sticker_lifestyle",
+    "vlog_money_salary",
+    "promo_fitness_gym",
+    "youth_tips_pick",
+    "drama_weekly_preview",
+    "tesla_fsd_vision"
+}
+
 def build_framing_filter(
     layout_mode: str,
     orig_width: int,
@@ -104,6 +113,7 @@ def build_framing_filter(
     Build FFmpeg video filtergraph string for 9:16 layout.
     Supports:
     - Graphic template placement (video_box: vx, vy, vw, vh onto template background)
+    - Fullscreen Overlay templates (video smart-cropped to 9:16 with transparent HUD/Stickers overlay)
     - Dynamic Punch-in Zoom (Submagic-style 1.10x focal zoom during middle explanation)
     - smart_crop (AI face tracking 9:16)
     - blur_background (box-blurred video backdrop)
@@ -118,6 +128,25 @@ def build_framing_filter(
     if enable_punch_in_zoom and dur >= 15.0:
         zoom_filter = f"crop='if(between(t,{z_start},{z_end}),iw/1.10,iw)':'if(between(t,{z_start},{z_end}),ih/1.10,ih)':(iw-ow)/2:(ih-oh)/2,"
 
+    # 1. Fullscreen Overlay Templates (9:16 Smart Crop Video + Floating Stickers/HUD on top)
+    if layout_mode in OVERLAY_LAYOUTS:
+        face_x = detect_face_center_x(video_path, start_time, end_time)
+        crop_w = int(orig_height * 9 / 16)
+        crop_w = min(crop_w, orig_width)
+
+        if face_x is not None:
+            x = int(face_x - crop_w / 2)
+            x = max(0, min(orig_width - crop_w, x))
+        else:
+            x = (orig_width - crop_w) // 2
+
+        vf = (
+            f"[0:v]{zoom_filter}crop={crop_w}:{orig_height}:{x}:0,scale=1080:1920[v_base];"
+            f"[v_base][{bg_input_idx}:v]overlay=0:0[base]"
+        )
+        return vf, "base"
+
+    # 2. Boxed Window Templates (Video placed into a specified canvas coordinate)
     if video_box is not None and layout_mode not in ["smart_crop", "blur_background"]:
         vx, vy, vw, vh = video_box
         # Scale to fit box preserving aspect ratio, pad with black if needed
