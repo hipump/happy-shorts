@@ -2401,6 +2401,31 @@ def render_top_header(
 
 
 
+VIRAL_KEYWORDS = {
+    "무조건", "절대", "진짜", "가장", "비밀", "핵심", "손해", "꿀팁", "대박", "필수",
+    "성공", "폭망", "미쳤다", "주의", "경고", "중요", "레전드", "이유", "방법", "정답",
+    "천재", "충격", "위험", "공짜", "무료", "최고", "최악", "비법", "공식", "원칙",
+    "팩트", "진실", "금지", "반드시", "기적", "극복", "혁신", "초대박", "쇼킹", "핵꿀팁"
+}
+
+def is_smart_keyword(word_text: str) -> bool:
+    """
+    Detects high-converting viral trigger keywords:
+    - Numbers, currencies, percentages (e.g. 100만원, 10배, 1위, 3가지, 50%, 3초, 1억, 0원)
+    - Strong viral hooks and emotional emphasis words
+    """
+    clean = re.sub(r'[^가-힣a-zA-Z0-9%]', '', word_text).strip()
+    if not clean:
+        return False
+    if re.search(r'\d', clean):
+        return True
+    if clean in VIRAL_KEYWORDS:
+        return True
+    for kw in VIRAL_KEYWORDS:
+        if kw in clean and len(kw) >= 2:
+            return True
+    return False
+
 def render_subtitle_frame(
     words_group: List[Word],
     active_idx: int,
@@ -2412,10 +2437,12 @@ def render_subtitle_frame(
     font_name: str = "black_han_sans",
     canvas_w: int = 1080,
     canvas_h: int = 1920,
-    y_center: int = 1360
+    y_center: int = 1360,
+    smart_keywords: bool = True
 ):
     """
     Renders floating kinetic typography with configurable template colors, fonts, and highlighter tape.
+    Supports Submagic/OpusClip-style smart keyword contrast highlighting.
     Guarantees clean, professional typography without artificial AI emojis.
     """
     img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
@@ -2436,6 +2463,7 @@ def render_subtitle_frame(
 
     active_font = get_font(chosen_font_path, base_size)
     normal_font = get_font(chosen_font_path, int(base_size * 0.88))
+    keyword_font = get_font(chosen_font_path, int(base_size * 1.06))
     stroke_w = 8 if (style == "clean_minimal" or "pret" in font_key or "gowun" in font_key or "song" in font_key) else 9
 
     space_w = 26
@@ -2447,7 +2475,11 @@ def render_subtitle_frame(
     for i, w in enumerate(words_group):
         clean_w = re.sub(emoji_pattern, '', w.word).strip()
         clean_words.append(clean_w)
-        f = active_font if i == active_idx else normal_font
+        is_kw = smart_keywords and is_smart_keyword(clean_w)
+        if i == active_idx:
+            f = keyword_font if is_kw else active_font
+        else:
+            f = normal_font
         if clean_w:
             bbox = f.getbbox(clean_w)
             w_w = bbox[2] - bbox[0]
@@ -2469,15 +2501,34 @@ def render_subtitle_frame(
             continue
         w_len = word_widths[i]
         word_center_x = curr_x + w_len // 2
-        f = active_font if i == active_idx else normal_font
-        col = (*active_color, 255) if i == active_idx else (*normal_color, 255)
-        s_width = stroke_w if i == active_idx else max(5, stroke_w - 2)
+        is_kw = smart_keywords and is_smart_keyword(clean_w)
 
-        # Highlighter Marker Tape behind active word
-        if i == active_idx and marker_color:
-            wb = f.getbbox(clean_w)
-            wh = wb[3] - wb[1]
-            draw_marker(draw, [curr_x, y_center - wh // 2, curr_x + w_len, y_center + wh // 2], color=marker_color, pad_x=10)
+        if i == active_idx:
+            f = keyword_font if is_kw else active_font
+            if is_kw:
+                # Vibrant contrasting pop: Neon Cyan or Neon Gold
+                col = (0, 255, 230, 255) if (active_color[0] > 200 and active_color[1] > 200 and active_color[2] < 100) else (*active_color, 255)
+            else:
+                col = (*active_color, 255)
+            s_width = stroke_w + (1 if is_kw else 0)
+        else:
+            f = normal_font
+            if is_kw:
+                # Inactive keyword: gentle neon accent tint (soft warm highlight)
+                col = (255, 238, 140, 255)
+            else:
+                col = (*normal_color, 255)
+            s_width = max(5, stroke_w - 2)
+
+        # Highlighter Marker Tape behind active word or keyword
+        if i == active_idx:
+            eff_marker = marker_color
+            if not eff_marker and is_kw:
+                eff_marker = (255, 190, 0, 160)
+            if eff_marker:
+                wb = f.getbbox(clean_w)
+                wh = wb[3] - wb[1]
+                draw_marker(draw, [curr_x, y_center - wh // 2, curr_x + w_len, y_center + wh // 2], color=eff_marker, pad_x=10)
 
         # Drop shadow
         draw.text(
@@ -2579,10 +2630,12 @@ def generate_subtitle_track(
     canvas_w: int = 1080,
     canvas_h: int = 1920,
     y_center: int = 1360,
-    filter_fillers: bool = True
-) -> Tuple[str, str]:
+    filter_fillers: bool = True,
+    smart_keywords: bool = True
+) -> Tuple[str, str, List[Tuple[str, float]]]:
     """
     Generate timed PNG sequence and an ffconcat descriptor file.
+    Returns (concat_file_path, blank_png_path, keyword_sfx_cues).
     """
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -2594,6 +2647,17 @@ def generate_subtitle_track(
     if filter_fillers:
         words = filter_filler_words(words)
 
+    # Collect smart keyword SFX cues (chime ding on high-impact keywords)
+    sfx_cues: List[Tuple[str, float]] = []
+    last_ding_time = -999.0
+    if smart_keywords:
+        for w in words:
+            clean_text = re.sub(r'[^가-힣a-zA-Z0-9%]', '', w.word).strip()
+            if is_smart_keyword(clean_text):
+                if (w.start - last_ding_time >= 4.0) and (0.6 <= w.start <= (clip_duration - 0.8)):
+                    sfx_cues.append(("ding", round(w.start, 2)))
+                    last_ding_time = w.start
+
     if not words or style == "none":
         concat_file = str(out_dir / "subtitles.txt")
         with open(concat_file, "w", encoding="utf-8") as f:
@@ -2601,7 +2665,7 @@ def generate_subtitle_track(
             f.write("file blank.png\n")
             f.write(f"duration {clip_duration:.2f}\n")
             f.write("file blank.png\n")
-        return concat_file, blank_png
+        return concat_file, blank_png, sfx_cues
 
     # Group words into 2~4 word chunks
     groups: List[List[Word]] = []
@@ -2673,7 +2737,8 @@ def generate_subtitle_track(
                 font_name=font_name,
                 canvas_w=canvas_w,
                 canvas_h=canvas_h,
-                y_center=y_center
+                y_center=y_center,
+                smart_keywords=smart_keywords
             )
 
             concat_entries.append((frame_filename, dur))
@@ -2693,4 +2758,4 @@ def generate_subtitle_track(
             f.write(f"duration {dur}\n")
         f.write("file blank.png\n")
 
-    return concat_file, blank_png
+    return concat_file, blank_png, sfx_cues

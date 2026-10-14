@@ -99,9 +99,37 @@ class RenderRequest(BaseModel):
     aspect_ratio: str = Field(default="9:16", description="영상 화면 비율 (9:16 또는 16:9)")
     remove_subtitles: bool = Field(default=False, description="원본 자막 삭제 (ai 처리라서 일부 뭉개짐이 있을 수 있음)")
     filter_fillers: bool = Field(default=True, description="추임새/말버릇(네, 어, 음 등) 자막 자동 제거")
+    bgm_track: str = Field(default="auto", description="배경음악 트랙 (auto, lofi, tech, cinematic, none)")
+    enable_sfx: bool = Field(default=True, description="효과음 (SFX: 훅 임팩트, 전환 우쉬, 키워드 딩)")
+    color_grade: str = Field(default="vibrant", description="스튜디오 색감 보정 (vibrant, cinematic, clean, none)")
+    dynamic_zoom: bool = Field(default=True, description="다이내믹 펀치인 줌")
+    smart_keywords: bool = Field(default=True, description="스마트 키워드 자막 하이라이트")
     target_filename: Optional[str] = None
 
 # Endpoints
+@app.get("/api/audio-presets")
+def list_audio_presets():
+    """Returns available BGM tracks and SFX capabilities."""
+    return {
+        "bgm_tracks": [
+            {"id": "auto", "name": "✨ 템플릿 맞춤 자동 선곡", "description": "템플릿 무드에 최적화된 BGM 자동 매칭"},
+            {"id": "lofi", "name": "☕ 로파이 팁스 (Lofi Study)", "description": "지식, 팁, 브이로그, 인터뷰에 어울리는 잔잔한 비트"},
+            {"id": "tech", "name": "⚡ 모던 테크 비트 (Tech Synth)", "description": "테크, 코딩, 주식, 트렌드에 어울리는 에너지 비트"},
+            {"id": "cinematic", "name": "🎬 시네마틱 펄스 (Cinematic)", "description": "뉴스, 속보, 다큐멘터리에 어울리는 웅장한 펄스"},
+            {"id": "none", "name": "🔇 BGM 끄기 (음소거)", "description": "배경음악 없이 원본 음성만 유지"}
+        ],
+        "color_grades": [
+            {"id": "vibrant", "name": "🌈 스튜디오 비비드 (추천)", "description": "선명한 대비와 생동감 넘치는 채도 + 엣지 샤프닝"},
+            {"id": "cinematic", "name": "🎞️ 시네마틱 필름", "description": "깊이 있는 영화 톤 콘트라스트"},
+            {"id": "clean", "name": "✨ 클린 샤프닝", "description": "색감 왜곡 없이 또렷한 윤곽선 보정"},
+            {"id": "none", "name": "원본 유지", "description": "원본 영상 색감 그대로"}
+        ],
+        "sfx_features": [
+            "훅 시작 임팩트 사운드 (0.18초 펀치 힛)",
+            "장면/배지 전환 우쉬 (3.2초 스위시)",
+            "스마트 키워드 자막 차임 딩 (숫자/바이럴 단어 강조음)"
+        ]
+    }
 @app.get("/api/status")
 def get_system_status():
     """Checks local Ollama service, GPU/device and default models."""
@@ -587,6 +615,11 @@ async def run_render_task(job_id: str, req: RenderRequest):
                     aspect_ratio=req.aspect_ratio,
                     remove_subtitles=req.remove_subtitles,
                     filter_fillers=req.filter_fillers,
+                    bgm_track=req.bgm_track,
+                    enable_sfx=req.enable_sfx,
+                    color_grade=req.color_grade,
+                    dynamic_zoom=req.dynamic_zoom,
+                    smart_keywords=req.smart_keywords,
                     callback=render_cb
                 )
             )

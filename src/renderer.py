@@ -7,6 +7,7 @@ from src.models import Highlight, Transcript, VideoMetadata, Word
 from src.templates import ShortsTemplate, get_template
 from src.framing import build_framing_filter
 from src.effects import render_template_background, render_top_header, generate_subtitle_track
+from src.audio import build_audio_pipeline
 
 TEMP_DIR = Path("temp")
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -33,6 +34,11 @@ def render_short(
     aspect_ratio: str = "9:16",
     remove_subtitles: bool = False,
     filter_fillers: bool = True,
+    bgm_track: str = "auto",
+    enable_sfx: bool = True,
+    color_grade: str = "vibrant",
+    dynamic_zoom: bool = True,
+    smart_keywords: bool = True,
     callback: Optional[Callable[[int, str], None]] = None,
     **kwargs
 ) -> str:
@@ -148,7 +154,9 @@ def render_short(
             start_time=start_time,
             end_time=end_time,
             aspect_ratio="16:9",
-            remove_subtitles=remove_subtitles
+            remove_subtitles=remove_subtitles,
+            color_grade=color_grade,
+            enable_punch_in_zoom=dynamic_zoom
         )
         filter_chains.append(base_filter)
 
@@ -180,7 +188,9 @@ def render_short(
             start_time=start_time,
             end_time=end_time,
             aspect_ratio="9:16",
-            remove_subtitles=remove_subtitles
+            remove_subtitles=remove_subtitles,
+            color_grade=color_grade,
+            enable_punch_in_zoom=dynamic_zoom
         )
         filter_chains.append(base_filter)
 
@@ -227,17 +237,20 @@ def render_short(
             video_box=template.video_box,
             bg_input_idx=bg_idx,
             aspect_ratio="9:16",
-            remove_subtitles=remove_subtitles
+            remove_subtitles=remove_subtitles,
+            color_grade=color_grade,
+            enable_punch_in_zoom=dynamic_zoom
         )
         filter_chains.append(base_filter)
 
     # 3. Subtitles
+    kw_sfx_cues = []
     if show_subtitles and eff_sub_style != "none" and clip_words:
         sub_y = int(canvas_h * 0.82) if is_landscape else template.subtitle_y
         if sub_y > 0:
             if callback:
                 callback(55, f"키네틱 타이포그래피 자막 시퀀스 렌더링 중 (스타일: {eff_sub_style})...")
-            sub_concat_file, _ = generate_subtitle_track(
+            sub_concat_file, _, kw_sfx_cues = generate_subtitle_track(
                 words=clip_words,
                 clip_duration=duration,
                 output_dir=str(clip_temp_dir / "subs"),
@@ -250,7 +263,8 @@ def render_short(
                 canvas_w=canvas_w,
                 canvas_h=canvas_h,
                 y_center=sub_y,
-                filter_fillers=filter_fillers
+                filter_fillers=filter_fillers,
+                smart_keywords=smart_keywords
             )
             input_args.extend(["-f", "concat", "-safe", "0", "-i", sub_concat_file])
             sub_input_idx = next_input_idx
@@ -259,22 +273,43 @@ def render_short(
             filter_chains.append(f"[{current_label}][{sub_input_idx}:v]overlay=0:0:shortest=1[v_sub]")
             current_label = "v_sub"
 
+    # 4. Audio Pipeline: Speech Master + BGM Ducking + Dynamic SFX
+    if callback:
+        callback(68, "BGM 사이드체인 오토 더킹 및 바이럴 SFX 오디오 믹싱 중...")
+
+    all_sfx_cues = []
+    if enable_sfx:
+        all_sfx_cues.append(("impact", 0.18))
+        if duration >= 5.0:
+            all_sfx_cues.append(("whoosh", 3.2))
+        if kw_sfx_cues:
+            all_sfx_cues.extend(kw_sfx_cues)
+
+    audio_inputs, audio_filters, final_audio_label, next_input_idx = build_audio_pipeline(
+        clip_duration=duration,
+        start_input_idx=next_input_idx,
+        bgm_choice=bgm_track,
+        template_id=template_id,
+        enable_sfx=enable_sfx,
+        sfx_cues=all_sfx_cues,
+        bgm_volume=0.28
+    )
+    input_args.extend(audio_inputs)
+    filter_chains.extend(audio_filters)
+
     full_filter_complex = ";".join(filter_chains)
 
-    # 4. Build & Run FFmpeg Command
+    # 5. Build & Run FFmpeg Command
     if callback:
-        callback(72, "FFmpeg 하드웨어 가속 비디오 인코딩 & -14 LUFS 오디오 노멀라이징 중...")
+        callback(74, "FFmpeg 하드웨어 가속 비디오 인코딩 & -14 LUFS 오디오 마스터링 중...")
 
     cmd = ["ffmpeg", "-y"]
     cmd.extend(input_args)
     cmd.extend([
         "-filter_complex", full_filter_complex,
         "-map", f"[{current_label}]",
-        "-map", "0:a?"
+        "-map", f"[{final_audio_label}]"
     ])
-
-    if normalize_audio:
-        cmd.extend(["-af", "loudnorm=I=-14:LRA=11:TP=-1.5"])
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     cmd.extend([

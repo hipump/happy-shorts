@@ -39,6 +39,9 @@ import {
   AudioLines,
   Type,
   Volume2,
+  Music,
+  Palette,
+  ZoomIn,
 } from "lucide-react";
 import {
   Template,
@@ -77,6 +80,13 @@ export default function HappyShortsApp() {
   const [aspectRatio, setAspectRatio] = useState<"9:16" | "16:9">("9:16");
   const [removeSubtitles, setRemoveSubtitles] = useState<boolean>(false);
   const [filterFillers, setFilterFillers] = useState<boolean>(true);
+
+  // Pro Studio Quality Options (BGM, SFX, Color Grading, Dynamic Zoom, Smart Keywords)
+  const [bgmTrack, setBgmTrack] = useState<string>("auto");
+  const [enableSfx, setEnableSfx] = useState<boolean>(true);
+  const [colorGrade, setColorGrade] = useState<string>("vibrant");
+  const [dynamicZoom, setDynamicZoom] = useState<boolean>(true);
+  const [smartKeywords, setSmartKeywords] = useState<boolean>(true);
 
   // Step 3: Analysis
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -348,6 +358,11 @@ export default function HappyShortsApp() {
           aspect_ratio: aspectRatio,
           remove_subtitles: removeSubtitles,
           filter_fillers: filterFillers,
+          bgm_track: bgmTrack,
+          enable_sfx: enableSfx,
+          color_grade: colorGrade,
+          dynamic_zoom: dynamicZoom,
+          smart_keywords: smartKeywords,
         }),
       });
 
@@ -1036,6 +1051,124 @@ export default function HappyShortsApp() {
                   )}
                 </div>
 
+                {/* Pro Studio Quality Bar (BGM, SFX, Color Grading, Dynamic Zoom, Smart Keywords) */}
+                <div className="glass-panel p-5 rounded-2xl border border-indigo-500/30 bg-slate-950/80 shadow-2xl flex flex-col gap-3.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-800/80">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <span className="text-xs sm:text-sm font-bold text-slate-100">
+                        ✨ 프로 퀄리티 연출 패키지 (사운드 디자인 & 스튜디오 화질)
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-semibold border border-indigo-500/30">
+                        OpusClip/Submagic 급
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-400">
+                      사이드체인 오토 더킹 &bull; 바이럴 SFX &bull; 스튜디오 색감 &bull; 스마트 키워드
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-1">
+                    {/* 1. BGM Track Selector */}
+                    <div className="flex flex-col gap-1.5 p-2.5 rounded-xl bg-slate-900/90 border border-slate-800">
+                      <span className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                        <Music className="w-3.5 h-3.5 text-indigo-400" /> BGM 배경음악:
+                      </span>
+                      <select
+                        value={bgmTrack}
+                        onChange={(e) => setBgmTrack(e.target.value)}
+                        className="bg-slate-950 border border-slate-700/80 rounded-lg text-xs font-medium text-slate-200 px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                      >
+                        <option value="auto">✨ 템플릿 맞춤 자동</option>
+                        <option value="lofi">☕ 로파이 팁스 (Study)</option>
+                        <option value="tech">⚡ 모던 테크 (Synth)</option>
+                        <option value="cinematic">🎬 시네마틱 (펄스)</option>
+                        <option value="none">🔇 BGM 끄기</option>
+                      </select>
+                    </div>
+
+                    {/* 2. SFX Sound Effects Toggle */}
+                    <div className="flex flex-col gap-1.5 p-2.5 rounded-xl bg-slate-900/90 border border-slate-800">
+                      <span className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                        <Volume2 className="w-3.5 h-3.5 text-amber-400" /> 효과음 (SFX):
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setEnableSfx(!enableSfx)}
+                        className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${
+                          enableSfx
+                            ? "bg-amber-500/15 border-amber-500/50 text-amber-300 shadow-sm"
+                            : "bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300"
+                        }`}
+                      >
+                        <span>{enableSfx ? "🔔 훅/전환/차임 켜짐" : "효과음 끄기"}</span>
+                        <div className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition ${enableSfx ? "bg-amber-500 justify-end" : "bg-slate-800 justify-start"}`}>
+                          <div className="bg-white w-2.5 h-2.5 rounded-full shadow" />
+                        </div>
+                      </button>
+                    </div>
+
+                    {/* 3. Studio Color Grading */}
+                    <div className="flex flex-col gap-1.5 p-2.5 rounded-xl bg-slate-900/90 border border-slate-800">
+                      <span className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                        <Palette className="w-3.5 h-3.5 text-rose-400" /> 화질 & 색감 보정:
+                      </span>
+                      <select
+                        value={colorGrade}
+                        onChange={(e) => setColorGrade(e.target.value)}
+                        className="bg-slate-950 border border-slate-700/80 rounded-lg text-xs font-medium text-slate-200 px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                      >
+                        <option value="vibrant">🌈 스튜디오 비비드 (추천)</option>
+                        <option value="cinematic">🎞️ 시네마틱 필름</option>
+                        <option value="clean">✨ 클린 샤프닝</option>
+                        <option value="none">원본 색감 유지</option>
+                      </select>
+                    </div>
+
+                    {/* 4. Dynamic Punch-in Zoom */}
+                    <div className="flex flex-col gap-1.5 p-2.5 rounded-xl bg-slate-900/90 border border-slate-800">
+                      <span className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                        <ZoomIn className="w-3.5 h-3.5 text-cyan-400" /> 다이내믹 줌:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setDynamicZoom(!dynamicZoom)}
+                        className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${
+                          dynamicZoom
+                            ? "bg-cyan-500/15 border-cyan-500/50 text-cyan-300 shadow-sm"
+                            : "bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300"
+                        }`}
+                      >
+                        <span>{dynamicZoom ? "🔍 1.10x 펀치인 줌" : "줌 효과 끄기"}</span>
+                        <div className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition ${dynamicZoom ? "bg-cyan-500 justify-end" : "bg-slate-800 justify-start"}`}>
+                          <div className="bg-white w-2.5 h-2.5 rounded-full shadow" />
+                        </div>
+                      </button>
+                    </div>
+
+                    {/* 5. Smart Keyword Subtitle Highlighting */}
+                    <div className="flex flex-col gap-1.5 p-2.5 rounded-xl bg-slate-900/90 border border-slate-800">
+                      <span className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-400" /> 스마트 키워드:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSmartKeywords(!smartKeywords)}
+                        className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${
+                          smartKeywords
+                            ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-300 shadow-sm"
+                            : "bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300"
+                        }`}
+                      >
+                        <span>{smartKeywords ? "🔤 숫자·핵심 네온강조" : "일반 자막"}</span>
+                        <div className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition ${smartKeywords ? "bg-emerald-500 justify-end" : "bg-slate-800 justify-start"}`}>
+                          <div className="bg-white w-2.5 h-2.5 rounded-full shadow" />
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Bottom Sticky Action & Fine-Tuning Panel */}
                 <div className="glass-panel p-5 rounded-2xl border border-slate-800/80 shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-6 sticky bottom-4 z-40 bg-slate-950/90 backdrop-blur-xl">
                   {/* Left: Currently Selected Template Pill */}
@@ -1696,6 +1829,81 @@ export default function HappyShortsApp() {
                                   }`}
                                 >
                                   <span>{filterFillers ? "✨ 말버릇(네/어/음) 정리 켜짐" : "모든 단어 표시"}</span>
+                                </button>
+                              </div>
+
+                              {/* BGM Track */}
+                              <div className="flex items-center justify-between pt-2 border-t border-slate-800/60">
+                                <span className="text-slate-400 font-semibold flex items-center gap-1">
+                                  <Music className="w-3 h-3 text-indigo-400" /> BGM 오토더킹:
+                                </span>
+                                <select
+                                  value={bgmTrack}
+                                  onChange={(e) => setBgmTrack(e.target.value)}
+                                  className="bg-slate-900 border border-slate-700 rounded text-[11px] font-semibold text-slate-200 px-2 py-0.5"
+                                >
+                                  <option value="auto">✨ 템플릿 맞춤</option>
+                                  <option value="lofi">☕ 로파이 팁스</option>
+                                  <option value="tech">⚡ 모던 테크</option>
+                                  <option value="cinematic">🎬 시네마틱</option>
+                                  <option value="none">🔇 BGM 끔</option>
+                                </select>
+                              </div>
+
+                              {/* SFX & Dynamic Zoom */}
+                              <div className="grid grid-cols-2 gap-1.5 pt-2 border-t border-slate-800/60">
+                                <button
+                                  type="button"
+                                  onClick={() => setEnableSfx(!enableSfx)}
+                                  className={`px-2 py-1 rounded text-[11px] font-semibold transition flex items-center justify-between border ${
+                                    enableSfx
+                                      ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
+                                      : "bg-slate-900 border-slate-800 text-slate-500"
+                                  }`}
+                                >
+                                  <span>🔔 효과음 (SFX)</span>
+                                  <span className="font-bold">{enableSfx ? "ON" : "OFF"}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDynamicZoom(!dynamicZoom)}
+                                  className={`px-2 py-1 rounded text-[11px] font-semibold transition flex items-center justify-between border ${
+                                    dynamicZoom
+                                      ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-300"
+                                      : "bg-slate-900 border-slate-800 text-slate-500"
+                                  }`}
+                                >
+                                  <span>🔍 펀치인 줌</span>
+                                  <span className="font-bold">{dynamicZoom ? "ON" : "OFF"}</span>
+                                </button>
+                              </div>
+
+                              {/* Color Grade & Smart Keywords */}
+                              <div className="grid grid-cols-2 gap-1.5 pt-1.5">
+                                <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5">
+                                  <Palette className="w-3 h-3 text-rose-400 flex-shrink-0" />
+                                  <select
+                                    value={colorGrade}
+                                    onChange={(e) => setColorGrade(e.target.value)}
+                                    className="bg-transparent text-[11px] font-semibold text-slate-200 w-full focus:outline-none"
+                                  >
+                                    <option value="vibrant" className="bg-slate-900">비비드 색감</option>
+                                    <option value="cinematic" className="bg-slate-900">시네마틱</option>
+                                    <option value="clean" className="bg-slate-900">클린 샤픈</option>
+                                    <option value="none" className="bg-slate-900">원본 색감</option>
+                                  </select>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setSmartKeywords(!smartKeywords)}
+                                  className={`px-2 py-1 rounded text-[11px] font-semibold transition flex items-center justify-between border ${
+                                    smartKeywords
+                                      ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
+                                      : "bg-slate-900 border-slate-800 text-slate-500"
+                                  }`}
+                                >
+                                  <span>🔤 키워드 강조</span>
+                                  <span className="font-bold">{smartKeywords ? "ON" : "OFF"}</span>
                                 </button>
                               </div>
                             </div>

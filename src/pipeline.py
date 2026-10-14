@@ -112,7 +112,12 @@ class ShortsPipeline:
         normalize_audio: bool = True,
         aspect_ratio: str = "9:16",
         remove_subtitles: bool = False,
-        filter_fillers: bool = True
+        filter_fillers: bool = True,
+        bgm_track: str = "auto",
+        enable_sfx: bool = True,
+        color_grade: str = "vibrant",
+        dynamic_zoom: bool = True,
+        smart_keywords: bool = True
     ):
         self.whisper_model = whisper_model
         self.llm_model = llm_model
@@ -131,6 +136,11 @@ class ShortsPipeline:
         self.aspect_ratio = aspect_ratio
         self.remove_subtitles = remove_subtitles
         self.filter_fillers = filter_fillers
+        self.bgm_track = bgm_track
+        self.enable_sfx = enable_sfx
+        self.color_grade = color_grade
+        self.dynamic_zoom = dynamic_zoom
+        self.smart_keywords = smart_keywords
 
     def run(
         self,
@@ -302,7 +312,12 @@ class ShortsPipeline:
                     normalize_audio=self.normalize_audio,
                     aspect_ratio=self.aspect_ratio,
                     remove_subtitles=self.remove_subtitles,
-                    filter_fillers=self.filter_fillers
+                    filter_fillers=self.filter_fillers,
+                    bgm_track=self.bgm_track,
+                    enable_sfx=self.enable_sfx,
+                    color_grade=self.color_grade,
+                    dynamic_zoom=self.dynamic_zoom,
+                    smart_keywords=self.smart_keywords
                 )
             else:
                 ratio_label = "16:9 가로" if self.aspect_ratio == "16:9" else "9:16 세로"
@@ -331,7 +346,12 @@ class ShortsPipeline:
                         normalize_audio=self.normalize_audio,
                         aspect_ratio=self.aspect_ratio,
                         remove_subtitles=self.remove_subtitles,
-                        filter_fillers=self.filter_fillers
+                        filter_fillers=self.filter_fillers,
+                        bgm_track=self.bgm_track,
+                        enable_sfx=self.enable_sfx,
+                        color_grade=self.color_grade,
+                        dynamic_zoom=self.dynamic_zoom,
+                        smart_keywords=self.smart_keywords
                     )
                 console.print(f"  [bold green]✔ 쇼츠 생성 완료:[/bold green] {output_path}")
 

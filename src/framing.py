@@ -100,6 +100,13 @@ OVERLAY_LAYOUTS = {
     "facetime_call"
 }
 
+COLOR_GRADE_PROFILES = {
+    "vibrant": "eq=contrast=1.06:brightness=0.01:saturation=1.14,unsharp=5:5:0.7:5:5:0.3",
+    "cinematic": "eq=contrast=1.12:brightness=-0.02:saturation=0.96,unsharp=5:5:0.6:5:5:0.2",
+    "clean": "unsharp=5:5:0.6:5:5:0.2",
+    "none": "",
+}
+
 def build_framing_filter(
     layout_mode: str,
     orig_width: int,
@@ -111,7 +118,8 @@ def build_framing_filter(
     bg_input_idx: int = 1,
     enable_punch_in_zoom: bool = True,
     aspect_ratio: str = "9:16",
-    remove_subtitles: bool = False
+    remove_subtitles: bool = False,
+    color_grade: str = "vibrant"
 ) -> Tuple[str, str]:
     """
     Build FFmpeg video filtergraph string for 9:16 or 16:9 layout.
@@ -119,9 +127,10 @@ def build_framing_filter(
     - Aspect Ratio: "9:16" (1080x1920) or "16:9" (1920x1080)
     - Face tracking center adjustment for horizontal (16:9) sources converted to 9:16
     - Source burned-in subtitle removal via spatial delogo inpainting
+    - Studio Color Grading & Sharpening (Vibrant, Cinematic, Clean)
+    - Dynamic Punch-in Zoom (Submagic-style 1.10x focal zoom during middle explanation)
     - Graphic template placement (video_box: vx, vy, vw, vh onto template background)
     - Fullscreen Overlay templates (video smart-cropped with transparent HUD/Stickers overlay)
-    - Dynamic Punch-in Zoom (Submagic-style 1.10x focal zoom during middle explanation)
     - smart_crop (AI face tracking)
     - blur_background (box-blurred video backdrop)
     - studio_card (floating card fallback)
@@ -157,9 +166,18 @@ def build_framing_filter(
         delogo_prefix = f"[0:v]delogo=x={sub_x}:y={sub_y}:w={sub_w}:h={sub_h}[v_nosub];"
         v_in = "[v_nosub]"
 
-    # 2. Dynamic Punch-in Zoom (1.10x center punch-in during middle climax)
+    # 2. Studio Color Grading & Crisp Sharpening
+    cg_prefix = ""
+    cg_filter = COLOR_GRADE_PROFILES.get(str(color_grade).lower().strip(), "")
+    if cg_filter:
+        cg_prefix = f"{v_in}{cg_filter}[v_graded];"
+        v_in = "[v_graded]"
+
+    filter_prep = f"{delogo_prefix}{cg_prefix}"
+
+    # 3. Dynamic Punch-in Zoom (1.10x center punch-in during middle explanation)
     zoom_filter = ""
-    if enable_punch_in_zoom and dur >= 15.0:
+    if enable_punch_in_zoom and dur >= 7.0:
         zoom_filter = f"crop='if(between(t,{z_start},{z_end}),iw/1.10,iw)':'if(between(t,{z_start},{z_end}),ih/1.10,ih)':(iw-ow)/2:(ih-oh)/2,"
 
     # 3. 16:9 Landscape Video Canvas (1920x1080)
@@ -167,7 +185,7 @@ def build_framing_filter(
         if orig_width >= orig_height:
             # Source is already horizontal: scale directly to 1920x1080 without cutting sides
             vf = (
-                f"{delogo_prefix}"
+                f"{filter_prep}"
                 f"{v_in}{zoom_filter}scale=1920:1080:force_original_aspect_ratio=decrease,"
                 f"pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black[base]"
             )
@@ -175,7 +193,7 @@ def build_framing_filter(
         else:
             # Source is vertical (9:16): center vertical video on blurred 1920x1080 background
             vf = (
-                f"{delogo_prefix}"
+                f"{filter_prep}"
                 f"{v_in}scale=1920:1080:force_original_aspect_ratio=increase,"
                 f"crop=1920:1080,boxblur=30:8,eq=brightness=-0.16:contrast=1.06[bg];"
                 f"{v_in}{zoom_filter}scale=-2:1080:force_original_aspect_ratio=decrease[fg];"
@@ -197,7 +215,7 @@ def build_framing_filter(
             x = (orig_width - crop_w) // 2
 
         vf = (
-            f"{delogo_prefix}"
+            f"{filter_prep}"
             f"{v_in}{zoom_filter}crop={crop_w}:{orig_height}:{x}:0,scale=1080:1920[v_base];"
             f"[v_base][{bg_input_idx}:v]overlay=0:0[base]"
         )
@@ -207,7 +225,7 @@ def build_framing_filter(
     if video_box is not None and layout_mode not in ["smart_crop", "blur_background"]:
         vx, vy, vw, vh = video_box
         vf = (
-            f"{delogo_prefix}"
+            f"{filter_prep}"
             f"{v_in}{zoom_filter}scale={vw}:{vh}:force_original_aspect_ratio=decrease,"
             f"pad={vw}:{vh}:(ow-iw)/2:(oh-ih)/2:color=black,format=rgba[fg];"
             f"[{bg_input_idx}:v][fg]overlay={vx}:{vy}[base]"
@@ -225,12 +243,12 @@ def build_framing_filter(
         else:
             x = (orig_width - crop_w) // 2
 
-        vf = f"{delogo_prefix}{v_in}{zoom_filter}crop={crop_w}:{orig_height}:{x}:0,scale=1080:1920[base]"
+        vf = f"{filter_prep}{v_in}{zoom_filter}crop={crop_w}:{orig_height}:{x}:0,scale=1080:1920[base]"
         return vf, "base"
 
     elif layout_mode == "blur_background":
         vf = (
-            f"{delogo_prefix}"
+            f"{filter_prep}"
             f"{v_in}scale=1080:1920:force_original_aspect_ratio=increase,"
             f"crop=1080:1920,boxblur=30:8,eq=brightness=-0.16:contrast=1.06[bg];"
             f"{v_in}{zoom_filter}scale=1080:-2:force_original_aspect_ratio=decrease[fg];"
@@ -242,7 +260,7 @@ def build_framing_filter(
         card_w = 1000
         card_h = int(card_w * 9 / 16)  # 562
         vf = (
-            f"{delogo_prefix}"
+            f"{filter_prep}"
             f"color=c=0x0B0D14:s=1080x1920[canvas];"
             f"{v_in}scale={card_w}:{card_h}:force_original_aspect_ratio=decrease,format=rgba[fg];"
             f"[canvas][fg]overlay=(W-w)/2:520[base]"
@@ -260,7 +278,7 @@ def build_framing_filter(
         else:
             x = (orig_width - crop_w) // 2
 
-        vf = f"{delogo_prefix}{v_in}{zoom_filter}crop={crop_w}:{orig_height}:{x}:0,scale=1080:1920[base]"
+        vf = f"{filter_prep}{v_in}{zoom_filter}crop={crop_w}:{orig_height}:{x}:0,scale=1080:1920[base]"
         return vf, "base"
 
 
