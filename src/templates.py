@@ -538,5 +538,8 @@ TEMPLATES: Dict[str, ShortsTemplate] = {
 TEMPLATES["breaking_news"] = TEMPLATES["news_portal"]
 TEMPLATES["tech_review"] = TEMPLATES["browser_window"]
 
+import copy
+
 def get_template(template_id: str) -> ShortsTemplate:
-    return TEMPLATES.get(template_id, TEMPLATES["browser_window"])
+    tpl = TEMPLATES.get(template_id, TEMPLATES["browser_window"])
+    return copy.deepcopy(tpl)

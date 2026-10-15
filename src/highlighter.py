@@ -183,6 +183,82 @@ def format_hook_badge_text(hook_text: str, title: str) -> str:
 
     return target[:24].strip()
 
+def generate_hook_variants(title: str, hook_text: str) -> dict:
+    """
+    Generates 3 distinct psychological angles for viral Shorts hooks (A/B testing):
+    1. Curiosity / Questioning: '설마 아직도 {topic} 몰랐나요?'
+    2. Loss Aversion / Urgency: '모르면 무조건 손해보는 {topic}'
+    3. Extreme Benefit / Shortcut: '3초 만에 끝내는 {topic}'
+    """
+    emoji_pattern = r'[\U00010000-\U0010ffff\u2600-\u27bf\ud83c-\ud83e\ud83d\udc00-\udfff]'
+    clean_title = re.sub(emoji_pattern, '', title).strip().strip("\"'「」『』[]")
+    clean_hook = re.sub(emoji_pattern, '', hook_text).strip().strip("\"'「」『』[]")
+    base = clean_hook if (clean_hook and len(clean_hook) <= 16) else clean_title[:14]
+    if not base:
+        base = "핵심 실전 꿀팁"
+
+    return {
+        "curiosity": f"설마 아직도 {base} 몰랐나요?"[:24],
+        "urgency": f"모르면 무조건 손해보는 {base}"[:24],
+        "benefit": f"3초 만에 끝내는 {base} 비결"[:24]
+    }
+
+def extract_stat_pill_from_transcript(
+    transcript: Transcript,
+    start_time: float,
+    end_time: float
+) -> Optional[dict]:
+    """
+    Extracts high-impact statistics or numbers (e.g. '100만원', '10배', '50%', '3초')
+    from the clip dialogue to render an Apple Keynote-style glassmorphic stat card.
+    """
+    clip_segs = [s for s in transcript.segments if start_time <= s.end and s.start <= end_time]
+    for seg in clip_segs:
+        text = seg.text.strip()
+        m = re.search(r'(\d+[\.,]?\d*)\s*(만원|억원|원|%|프로|배|가지|초|분|등|위)', text)
+        if m:
+            num = m.group(1)
+            unit = m.group(2)
+            metric = f"{num}{unit}"
+            rel_t = max(2.2, round(seg.start - start_time, 1))
+
+            if unit in ["만원", "억원", "원"]:
+                icon = "money"
+                sub = "핵심 비용 절감"
+            elif unit in ["%", "프로"]:
+                icon = "percent"
+                sub = "효율 개선 지표"
+            elif unit in ["배"]:
+                icon = "growth"
+                sub = "생산성 폭증"
+            elif unit in ["초", "분"]:
+                icon = "speed"
+                sub = "초단기 세이브"
+            else:
+                icon = "star"
+                sub = "핵심 주요 포인트"
+
+            return {
+                "metric": metric,
+                "label": sub,
+                "icon": icon,
+                "rel_time": min(rel_t, 7.5)
+            }
+
+    return None
+
+def calculate_infinite_loop_score(start_text: str, end_text: str) -> int:
+    """
+    Estimates the psychological seamlessness of looping back to the hook (78~98).
+    Higher if the end clause naturally leads into an explanation or setup.
+    """
+    score = 82
+    if any(end_text.endswith(p) for p in [".", "!", "?", "요", "다", "죠"]):
+        score += 6
+    if any(k in start_text for k in ["이게", "여기서", "바로", "이유", "방법", "팁"]):
+        score += 6
+    return min(98, score)
+
 def summarize_clip_content(
     transcript: Transcript,
     start_time: float,
@@ -325,16 +401,21 @@ def fallback_heuristic_highlights(
                 "value": 24 if len(pts) >= 2 else 18,
                 "trend": min(20, max(12, virality_score - 70))
             }
+            hook_var = generate_hook_variants(clip_title, f"놓치면 손해보는 핵심 팁 #{idx}")
+            stat_p = extract_stat_pill_from_transcript(transcript, s_start, s_end)
             results.append(Highlight(
                 id=idx,
                 title=clip_title,
                 hook_text=f"놓치면 손해보는 핵심 팁 #{idx}",
+                hook_variants=hook_var,
                 start_time=s_start,
                 end_time=s_end,
                 reason="음성 밀도가 높고 설명이 가장 충실한 핵심 구간",
                 summary_points=pts,
                 virality_score=virality_score,
-                score_breakdown=breakdown
+                score_breakdown=breakdown,
+                loop_score=88,
+                stat_pill=stat_p
             ))
             if len(results) >= count:
                 break
@@ -380,20 +461,31 @@ def detect_highlights(
     system_prompt = (
         "You are an elite YouTube Shorts & TikTok PD creating viral million-view clips.\n"
         "Analyze the dialogue transcript and choose the best viral highlight moments for Shorts.\n\n"
+        "🔥 VIRAL KILLER FACTOR RANKING (PRIORITIZE THESE):\n"
+        "1. EXTREME FINANCIAL / NUMBER CONTRAST (Highest Priority, 95~99 Score):\n"
+        "   - Clips with huge numerical contrasts (e.g. '70만원 vs 4만원', '100만원 손해', '10배 절약', '3초 만에 해결').\n"
+        "   - Immediately grabs dopamine and forces the viewer to stay.\n"
+        "2. LOSS AVERSION & RIP-OFF PREVENTION (High Priority, 90~95 Score):\n"
+        "   - Secrets to avoid getting scammed or overcharged (e.g. '카센터 눈탱이 방지', '보험료 할증 폭탄 피하는 법').\n"
+        "3. COUNTER-INTUITIVE TRUTHS & EXCLUSIVE SECRETS (High Priority, 88~93 Score):\n"
+        "   - Things most people do wrong (e.g. '사고 났을 때 절대 보험 먼저 부르지 마세요').\n"
+        "⛔ CLICHÉ & COMMON SENSE PENALTY (AVOID OR SCORE 60~72):\n"
+        "   - Boring textbook advice or public service announcements (e.g. '사고 나면 비상등 켜고 안전지대로 대피하고 112 신고').\n"
+        "   - Everyone already knows this! Viewers swipe away within 1 second. DO NOT pick this as #1!\n\n"
         "OPUS CLIP 4-PILLAR VIRALITY SCORING (Total: 60 ~ 99):\n"
-        "1. Hook (0~30): First 3 seconds stops viewer from swiping away with an intriguing question/claim.\n"
-        "2. Flow (0~25): Beginning-middle-end forms a standalone, coherent story without abrupt cuts.\n"
-        "3. Value (0~25): Delivers high practical takeaway value, secret tip, or entertaining insight.\n"
+        "1. Hook (0~30): First 3 seconds stopping power.\n"
+        "2. Flow (0~25): Standalone, coherent, punchy story without boring pauses.\n"
+        "3. Value (0~25): High practical takeaway, money saved, or secret tip.\n"
         "4. Trend (0~20): High curiosity and shareability for a wide audience.\n\n"
         "CRITICAL RULES:\n"
         f"1. Target length: Highlight clips MUST span {min_dur} to {max_dur} seconds.\n"
         "2. LANGUAGE: You MUST write title, hook_text, reason, and summary_points in 100% natural, high-CTR KOREAN (Hangul).\n"
         "   - NEVER use Chinese characters (Hanzi). Only Korean Hangul.\n"
-        "3. hook_text: Short, punchy hook under 20 chars in Korean WITHOUT emojis (e.g., '테슬라 차주 필수 꿀팁'). Do NOT include emojis.\n"
-        "4. title: Click-worthy Korean YouTube Shorts title (e.g., '트렁크 오토락 숨겨진 기능'). Do NOT include emojis.\n"
-        "5. virality_score: Integer from 65 to 99 representing overall virality prediction.\n"
+        "3. hook_text: Short, punchy hook under 20 chars in Korean WITHOUT emojis (e.g., '사이드미러 4만원 해결법').\n"
+        "4. title: Click-worthy Korean YouTube Shorts title (e.g., '70만원 수리비 단돈 4만원에 끝내는 비결'). Do NOT repeat words.\n"
+        "5. virality_score: Integer from 60 to 99 representing true viral retention potential.\n"
         "6. score_breakdown: Object with keys 'hook', 'flow', 'value', 'trend'.\n"
-        "7. summary_points: EXACTLY 2 concrete bullet points summarizing the actual practical facts/methods explained in this clip (under 28 chars each in Korean, e.g. ['트렁크 뒤 비프음 3회 후 자동 오픈', '천장 낮은 주차장에서 높이 조절']). Do NOT write generic filler like '시청자 몰입도가 높음'.\n"
+        "7. summary_points: EXACTLY 2 concrete bullet points summarizing the actual practical facts/methods (under 28 chars each in Korean). Do NOT write generic filler.\n"
         "8. Output ONLY the specified JSON structure.\n"
     )
 
@@ -525,16 +617,30 @@ def detect_highlights(
             if callback and len(highlights) == 0:
                 callback(92, "OpusClip 4기둥 바이럴 채점 및 CTR 훅 타이포그래피 생성 중...")
 
+            # Viral Keyword & Financial Contrast Detection
+            all_clip_text = " ".join(seg.text for seg in transcript.segments if seg.start >= (s_start - 0.2) and seg.end <= (s_end + 0.2))
+            has_money_contrast = bool(re.search(r'(\d+만\s*원|\d+원|70만|4만|100만|비용|수리비|견적|환불|할증|절약)', all_clip_text))
+            has_loss_aversion = any(kw in all_clip_text for kw in ["눈탱이", "호구", "손해", "실수", "당하지", "사기", "비밀", "꿀팁", "아끼", "절대", "주의"])
+            is_boring_cliche = any(kw in all_clip_text for kw in ["안전지대", "가드레일", "삼각대", "대피", "112", "신고"]) and not has_money_contrast
+
             raw_v = item.get("virality_score")
             base_llm = int(raw_v) if raw_v and str(raw_v).isdigit() else 80
 
-            hook_sc = min(29, max(18, 20 + (5 if has_curiosity_hook else 2) + (3 if len(formatted_hook) >= 6 else 0)))
-            flow_sc = min(25, max(17, 18 + (5 if 110 <= wpm <= 190 else 2)))
-            value_sc = min(25, max(17, 19 + (5 if len(summary_points) >= 2 else 2)))
-            trend_sc = min(20, max(14, 15 + (3 if has_curiosity_hook else 1)))
+            # Dynamic multi-factor scoring with extreme contrast reward & cliché penalty
+            hook_bonus = (6 if has_money_contrast else (3 if has_curiosity_hook else 0))
+            value_bonus = (5 if has_loss_aversion else 2) + (3 if has_money_contrast else 0)
+            cliche_penalty = -16 if is_boring_cliche else 0
 
-            v_score = hook_sc + flow_sc + value_sc + trend_sc
-            v_score = min(98, max(72, v_score))
+            hook_sc = min(30, max(14, 18 + hook_bonus))
+            flow_sc = min(25, max(14, 18 + (4 if 110 <= wpm <= 190 else 1)))
+            value_sc = min(25, max(14, 16 + value_bonus))
+            trend_sc = min(20, max(12, 14 + (4 if has_money_contrast or has_loss_aversion else 1)))
+
+            v_score = hook_sc + flow_sc + value_sc + trend_sc + cliche_penalty
+            if base_llm:
+                v_score = int(v_score * 0.6 + base_llm * 0.4)
+            v_score = min(99, max(60, v_score))
+
             score_breakdown = {
                 "hook": hook_sc,
                 "flow": flow_sc,
@@ -542,25 +648,36 @@ def detect_highlights(
                 "trend": trend_sc
             }
 
+            # Hook A/B testing variants & Infinite Loop Score & Apple Stat Pill
+            hook_variants = generate_hook_variants(title, formatted_hook)
+            last_segs = [seg.text for seg in transcript.segments if seg.start >= (s_end - 5.0) and seg.end <= (s_end + 0.5)]
+            last_text = " ".join(last_segs)
+            loop_score = calculate_infinite_loop_score(first_segs_text, last_text)
+            stat_pill = extract_stat_pill_from_transcript(transcript, s_start, s_end)
+
             highlights.append(Highlight(
                 id=idx,
                 title=title,
                 hook_text=formatted_hook,
+                hook_variants=hook_variants,
                 start_time=s_start,
                 end_time=s_end,
                 reason=reason,
                 summary_points=summary_points,
                 virality_score=v_score,
-                score_breakdown=score_breakdown
+                score_breakdown=score_breakdown,
+                loop_score=loop_score,
+                stat_pill=stat_pill
             ))
 
-            if len(highlights) >= max_count:
-                break
-            
         if highlights:
+            # Sort clips by virality_score descending so top viral killer clip is always #1!
+            highlights.sort(key=lambda h: h.virality_score, reverse=True)
+            for i, h in enumerate(highlights):
+                h.id = i + 1
             if callback:
                 callback(96, f"최종 {len(highlights)}개 고득점 하이라이트 구간 확정 완료")
-            return highlights
+            return highlights[:max_count]
 
     except Exception as e:
         print(f"[Warning] Ollama highlight extraction fallback triggered: {e}")

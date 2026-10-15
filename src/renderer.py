@@ -6,8 +6,14 @@ from typing import Optional, Tuple, Callable
 from src.models import Highlight, Transcript, VideoMetadata, Word
 from src.templates import ShortsTemplate, get_template
 from src.framing import build_framing_filter
-from src.effects import render_template_background, render_top_header, generate_subtitle_track
+from src.effects import (
+    render_template_background,
+    render_top_header,
+    generate_subtitle_track,
+    render_keynote_stat_pill
+)
 from src.audio import build_audio_pipeline
+from src.inpainting import LamaInpainter, inpaint_video_subtitles
 
 TEMP_DIR = Path("temp")
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -36,9 +42,13 @@ def render_short(
     filter_fillers: bool = True,
     bgm_track: str = "auto",
     enable_sfx: bool = True,
-    color_grade: str = "vibrant",
+    color_grade: str = "vibrant_tech",
     dynamic_zoom: bool = True,
     smart_keywords: bool = True,
+    bounce_animation: bool = True,
+    hook_variant_type: str = "default",
+    enable_stat_pill: bool = True,
+    seamless_loop: bool = True,
     callback: Optional[Callable[[int, str], None]] = None,
     **kwargs
 ) -> str:
@@ -83,6 +93,12 @@ def render_short(
     clip_id = f"clip_{highlight.id}_{int(highlight.start_time)}"
     clip_temp_dir = TEMP_DIR / clip_id
     clip_temp_dir.mkdir(parents=True, exist_ok=True)
+
+    # Resolve Hook A/B testing variant if specified
+    if hook_variant_type and hook_variant_type != "default" and getattr(highlight, "hook_variants", None):
+        chosen_hook = highlight.hook_variants.get(hook_variant_type)
+        if chosen_hook:
+            highlight.hook_text = chosen_hook
 
     if template is None:
         template = get_template(template_id)
@@ -130,17 +146,51 @@ def render_short(
                     end=rel_end
                 ))
 
+    active_video_path = metadata.local_path
+    slice_start = start_time
+    slice_end = end_time
+    framing_remove_subtitles = remove_subtitles
+
+    if remove_subtitles:
+        lama = LamaInpainter.get_instance()
+        if lama is not None:
+            if callback:
+                callback(20, "AI 딥러닝 자막 제거(LaMa Inpainting) 복원 처리 중...")
+            clean_slice = str(clip_temp_dir / "inpainted_source.mp4")
+            try:
+                def inpaint_cb(p: int, msg: str):
+                    if callback:
+                        # Smoothly scale inpainting (0..100) into 20%..33% of overall short progress
+                        scaled_p = 20 + int(p * 0.13)
+                        callback(scaled_p, msg)
+
+                inpaint_video_subtitles(
+                    input_video=metadata.local_path,
+                    output_video=clean_slice,
+                    start_time=start_time,
+                    end_time=end_time,
+                    aspect_ratio=aspect_ratio,
+                    callback=inpaint_cb
+                )
+                active_video_path = clean_slice
+                slice_start = 0.0
+                slice_end = duration
+                framing_remove_subtitles = False  # Completely restored with LaMa deep learning, no delogo blur
+            except Exception as e:
+                print(f"[Renderer] LaMa inpainting failed, falling back to delogo: {e}")
+                framing_remove_subtitles = True
+
     input_args = [
-        "-ss", str(start_time),
-        "-to", str(end_time),
-        "-i", metadata.local_path
+        "-ss", str(slice_start),
+        "-to", str(slice_end),
+        "-i", active_video_path
     ]
     filter_chains = []
     next_input_idx = 1
 
     ratio_desc = "16:9 가로 와이드" if is_landscape else "9:16 세로 쇼츠"
     if callback:
-        sub_info = " (원본 자막 AI 제거 포함)" if remove_subtitles else ""
+        sub_info = " (원본 자막 AI 제거 완료)" if (remove_subtitles and not framing_remove_subtitles) else (" (원본 자막 delogo 제거)" if remove_subtitles else "")
         callback(35, f"{ratio_desc} 비주얼 프레이밍 & 템플릿 [{template.name}] 캔버스 합성 중...{sub_info}")
 
     # 2. Template Background or Framing Filter
@@ -150,11 +200,11 @@ def render_short(
             layout_mode=eff_layout,
             orig_width=metadata.width,
             orig_height=metadata.height,
-            video_path=metadata.local_path,
-            start_time=start_time,
-            end_time=end_time,
+            video_path=active_video_path,
+            start_time=slice_start,
+            end_time=slice_end,
             aspect_ratio="16:9",
-            remove_subtitles=remove_subtitles,
+            remove_subtitles=framing_remove_subtitles,
             color_grade=color_grade,
             enable_punch_in_zoom=dynamic_zoom
         )
@@ -184,11 +234,11 @@ def render_short(
             layout_mode="smart_crop",
             orig_width=metadata.width,
             orig_height=metadata.height,
-            video_path=metadata.local_path,
-            start_time=start_time,
-            end_time=end_time,
+            video_path=active_video_path,
+            start_time=slice_start,
+            end_time=slice_end,
             aspect_ratio="9:16",
-            remove_subtitles=remove_subtitles,
+            remove_subtitles=framing_remove_subtitles,
             color_grade=color_grade,
             enable_punch_in_zoom=dynamic_zoom
         )
@@ -231,13 +281,13 @@ def render_short(
             layout_mode=eff_layout,
             orig_width=metadata.width,
             orig_height=metadata.height,
-            video_path=metadata.local_path,
-            start_time=start_time,
-            end_time=end_time,
+            video_path=active_video_path,
+            start_time=slice_start,
+            end_time=slice_end,
             video_box=template.video_box,
             bg_input_idx=bg_idx,
             aspect_ratio="9:16",
-            remove_subtitles=remove_subtitles,
+            remove_subtitles=framing_remove_subtitles,
             color_grade=color_grade,
             enable_punch_in_zoom=dynamic_zoom
         )
@@ -264,7 +314,8 @@ def render_short(
                 canvas_h=canvas_h,
                 y_center=sub_y,
                 filter_fillers=filter_fillers,
-                smart_keywords=smart_keywords
+                smart_keywords=smart_keywords,
+                bounce_animation=bounce_animation
             )
             input_args.extend(["-f", "concat", "-safe", "0", "-i", sub_concat_file])
             sub_input_idx = next_input_idx
@@ -272,6 +323,45 @@ def render_short(
 
             filter_chains.append(f"[{current_label}][{sub_input_idx}:v]overlay=0:0:shortest=1[v_sub]")
             current_label = "v_sub"
+
+    # 3.5. Apple Keynote Glassmorphic Stat Pill Overlay (High-impact metric highlight)
+    if enable_stat_pill and duration >= 8.0:
+        stat_info = getattr(highlight, "stat_pill", None)
+        if not stat_info and transcript:
+            from src.highlighter import extract_stat_pill_from_transcript
+            stat_info = extract_stat_pill_from_transcript(transcript, start_time, end_time)
+
+        if stat_info:
+            stat_png = str(clip_temp_dir / "stat_pill.png")
+            if is_landscape:
+                stat_y = 380
+            elif template.video_box:
+                stat_y = template.video_box[1] + 68
+            else:
+                stat_y = 360
+
+            render_keynote_stat_pill(
+                metric_text=stat_info.get("metric", "100%"),
+                label_text=stat_info.get("label", "KEY METRIC • 실전 핵심 가치"),
+                icon_type=stat_info.get("icon", "money"),
+                output_path=stat_png,
+                canvas_w=canvas_w,
+                canvas_h=canvas_h,
+                y_pos=stat_y
+            )
+            p_start = float(stat_info.get("rel_time", 3.8))
+            p_end = min(duration - 0.8, p_start + 3.0)
+            p_dur = max(0.8, round(p_end - p_start, 2))
+            input_args.extend(["-loop", "1", "-t", str(p_dur), "-i", stat_png])
+            stat_idx = next_input_idx
+            next_input_idx += 1
+            fade_dur = 0.28
+            out_fade_st = max(0.2, round(p_dur - fade_dur, 2))
+            filter_chains.append(
+                f"[{stat_idx}:v]format=rgba,fade=t=in:st=0:d={fade_dur}:alpha=1,fade=t=out:st={out_fade_st}:d={fade_dur}:alpha=1[v_stat_fade];"
+                f"[{current_label}][v_stat_fade]overlay=0:0:enable='between(t,{p_start:.2f},{p_end:.2f})'[v_stat]"
+            )
+            current_label = "v_stat"
 
     # 4. Audio Pipeline: Speech Master + BGM Ducking + Dynamic SFX
     if callback:
@@ -292,7 +382,8 @@ def render_short(
         template_id=template_id,
         enable_sfx=enable_sfx,
         sfx_cues=all_sfx_cues,
-        bgm_volume=0.28
+        bgm_volume=0.28,
+        seamless_loop=seamless_loop
     )
     input_args.extend(audio_inputs)
     filter_chains.extend(audio_filters)
@@ -323,15 +414,16 @@ def render_short(
         output_path
     ])
 
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"FFmpeg rendering failed: {result.stderr[-1000:]}")
+    try:
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"FFmpeg rendering failed: {result.stderr[-1000:]}")
 
-    if callback:
-        callback(88, "비디오 스트림 인코딩 완료 및 임시 리소스 정리 중...")
+        if callback:
+            callback(88, "비디오 스트림 인코딩 완료 및 임시 리소스 정리 중...")
 
-    # Clean up temp frames for this clip
-    shutil.rmtree(clip_temp_dir, ignore_errors=True)
-
-    return output_path
+        return output_path
+    finally:
+        # Clean up temp frames for this clip
+        shutil.rmtree(clip_temp_dir, ignore_errors=True)
 

@@ -70,14 +70,31 @@ def prepare_source(source: str, callback=None) -> VideoMetadata:
     if video_id:
         clean_url = f"https://www.youtube.com/watch?v={video_id}"
         expected_mp4 = DOWNLOADS_DIR / f"{video_id}.mp4"
+        info_json = DOWNLOADS_DIR / f"{video_id}.json"
 
         # Check if already downloaded
         title = f"YouTube_{video_id}"
         if expected_mp4.exists() and expected_mp4.stat().st_size > 1024:
             local_path = str(expected_mp4)
             size_mb = round(expected_mp4.stat().st_size / (1024 * 1024), 1)
+
+            # Retrieve cached video title if available
+            if info_json.exists():
+                try:
+                    title = json.loads(info_json.read_text(encoding="utf-8")).get("title", title)
+                except Exception:
+                    pass
+            else:
+                try:
+                    with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True, 'skip_download': True}) as ydl:
+                        info = ydl.extract_info(clean_url, download=False)
+                        title = info.get('title', title)
+                        info_json.write_text(json.dumps({"title": title}, ensure_ascii=False), encoding="utf-8")
+                except Exception:
+                    pass
+
             if callback:
-                callback(25, f"기존 다운로드 캐시 확인 완료 ({size_mb} MB) - 즉시 재사용")
+                callback(25, f"기존 다운로드 캐시 확인 완료 ({title[:25]}... - {size_mb} MB) - 즉시 재사용")
         else:
             if callback:
                 callback(5, "유튜브 영상 정보 조회 및 스트림 연결 중...")
@@ -112,6 +129,10 @@ def prepare_source(source: str, callback=None) -> VideoMetadata:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(clean_url, download=True)
                 title = info.get('title', title)
+                try:
+                    info_json.write_text(json.dumps({"title": title}, ensure_ascii=False), encoding="utf-8")
+                except Exception:
+                    pass
 
             local_path = str(expected_mp4)
             # If for some reason extension is not mp4, check folder

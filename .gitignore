@@ -7,3 +7,7 @@ downloads/
 test_assets/
 output/
 .DS_Store
+
+# Large AI model files (>100MB)
+assets/models/
+*.onnx

@@ -88,7 +88,8 @@ def build_audio_pipeline(
     sfx_cues: Optional[List[Tuple[str, float]]] = None,
     bgm_volume: float = 0.28,
     ducking_ratio: float = 5.0,
-    ducking_threshold: float = 0.08
+    ducking_threshold: float = 0.08,
+    seamless_loop: bool = True
 ) -> Tuple[List[str], List[str], str, int]:
     """
     Constructs FFmpeg input arguments and filter chains for:
@@ -116,12 +117,12 @@ def build_audio_pipeline(
         next_idx += 1
 
         # Process BGM: loop, format, initial volume, and sidechain compression against [a_voice]
-        # sidechaincompress ducks BGM by ~18-24dB whenever [a_voice] amplitude exceeds threshold
+        # sidechaincompress ducks BGM smoothly whenever [a_voice] amplitude exceeds threshold
         bgm_chain = (
             f"[{bgm_in_idx}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
             f"volume={bgm_volume:.2f}[a_bgm_raw];"
             f"[a_bgm_raw][a_voice]sidechaincompress=threshold={ducking_threshold}:"
-            f"ratio={ducking_ratio}:attack=30:release=350[a_bgm_ducked]"
+            f"ratio={ducking_ratio}:attack=35:release=480[a_bgm_ducked]"
         )
         audio_filters.append(bgm_chain)
         mix_sources.append("[a_bgm_ducked]")
@@ -155,7 +156,7 @@ def build_audio_pipeline(
             next_idx += 1
 
             delay_ms = max(1, int(round(cue_time * 1000)))
-            vol = 0.55 if sfx_type in ["impact", "ding"] else 0.40
+            vol = 0.45 if sfx_type == "impact" else (0.40 if sfx_type == "ding" else 0.32)
             lbl = f"a_sfx_{sfx_idx_counter}"
             sfx_chain = (
                 f"[{sfx_in_idx}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
@@ -176,8 +177,14 @@ def build_audio_pipeline(
         audio_filters.append(mix_filter)
         final_label = "a_mixed"
 
-    # 4. Final Loudness Normalization (-14 LUFS standard for YouTube Shorts & Reels)
-    audio_filters.append(f"[{final_label}]loudnorm=I=-14:LRA=11:TP=-1.5[a_master]")
+    # 4. Final Loudness Normalization & Seamless Loop Smoothing
+    if seamless_loop and clip_duration >= 4.0:
+        fade_st = round(clip_duration - 0.14, 2)
+        audio_filters.append(
+            f"[{final_label}]loudnorm=I=-14:LRA=11:TP=-1.5,afade=t=out:st={fade_st}:d=0.14[a_master]"
+        )
+    else:
+        audio_filters.append(f"[{final_label}]loudnorm=I=-14:LRA=11:TP=-1.5[a_master]")
     final_audio_label = "a_master"
 
     return audio_inputs, audio_filters, final_audio_label, next_idx

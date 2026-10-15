@@ -111,6 +111,9 @@ def resolve_font_path(font_name_or_path: str) -> str:
         return FONT_PRETENDARD
     return FONT_BLACK_HAN_SANS
 
+from functools import lru_cache
+
+@lru_cache(maxsize=128)
 def get_font(font_path_or_key: str, size: int) -> ImageFont.FreeTypeFont:
     path = resolve_font_path(font_path_or_key)
     if os.path.exists(path):
@@ -2397,34 +2400,172 @@ def render_top_header(
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     img.save(output_path, "PNG")
+def render_keynote_stat_pill(
+    metric_text: str,
+    label_text: str = "KEY METRIC • 실전 핵심 가치",
+    icon_type: str = "money",
+    output_path: str = "",
+    canvas_w: int = 1080,
+    canvas_h: int = 1920,
+    y_pos: int = 420
+) -> str:
+    """
+    Renders an Apple Keynote-style glassmorphic floating stat pill.
+    Features:
+    - Frosted dark slate glass backdrop with smooth rounded pill corners (radius=24)
+    - Gradient accent icon circle (money 💰, growth 📈, speed ⚡, percent 🎯)
+    - Bold high-contrast typography
+    - Soft drop shadow for clean depth
+    """
+    img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    f_metric = get_font(FONT_PRETENDARD, 38)
+    f_sub = get_font(FONT_PRETENDARD, 18)
+
+    clean_metric = metric_text.strip()
+    clean_label = label_text.strip().upper()
+
+    mb = f_metric.getbbox(clean_metric)
+    mw = mb[2] - mb[0]
+
+    pill_w = max(440, mw + 150)
+    pill_h = 104
+    pill_x1 = (canvas_w - pill_w) // 2
+    pill_x2 = pill_x1 + pill_w
+    pill_y1 = y_pos - pill_h // 2
+    pill_y2 = pill_y1 + pill_h
+
+    # 1. Soft Multi-layer Drop Shadow
+    for off, a in [(8, 30), (5, 50), (2, 70)]:
+        draw.rounded_rectangle(
+            [pill_x1 - 2, pill_y1 + off, pill_x2 + 2, pill_y2 + off],
+            radius=26,
+            fill=(0, 0, 0, a)
+        )
+
+    # 2. Glassmorphic Card Background (Deep Slate Glass)
+    draw.rounded_rectangle(
+        [pill_x1, pill_y1, pill_x2, pill_y2],
+        radius=24,
+        fill=(15, 23, 42, 238),
+        outline=(255, 255, 255, 45),
+        width=2
+    )
+
+    # Top Specular Highlight Line (Apple Glassmorphism Sheen)
+    draw.arc(
+        [pill_x1 + 6, pill_y1 + 1, pill_x1 + 30, pill_y1 + 25],
+        start=180, end=270, fill=(255, 255, 255, 120), width=2
+    )
+    draw.line(
+        [pill_x1 + 20, pill_y1 + 1, pill_x2 - 20, pill_y1 + 1],
+        fill=(255, 255, 255, 110), width=2
+    )
+
+    # 3. Icon Circle Badge (Left side)
+    icon_cx = pill_x1 + 54
+    icon_cy = pill_y1 + pill_h // 2
+    icon_r = 30
+
+    badge_colors = {
+        "money": ((234, 179, 8, 230), "₩"),
+        "growth": ((34, 197, 94, 230), "↗"),
+        "percent": ((168, 85, 247, 230), "%"),
+        "speed": ((14, 165, 233, 230), "⚡"),
+        "star": ((249, 115, 22, 230), "★")
+    }
+    bg_col, symbol = badge_colors.get(icon_type, ((99, 102, 241, 230), "★"))
+
+    draw.ellipse(
+        [icon_cx - icon_r, icon_cy - icon_r, icon_cx + icon_r, icon_cy + icon_r],
+        fill=bg_col,
+        outline=(255, 255, 255, 160),
+        width=2
+    )
+    f_sym = get_font(FONT_BLACK_HAN_SANS, 32)
+    draw.text((icon_cx, icon_cy), symbol, font=f_sym, fill=(255, 255, 255), anchor="mm")
+
+    # 4. Text Content (Right of icon)
+    text_x = pill_x1 + 104
+    # Label with subtle accent dot
+    draw.ellipse([text_x, pill_y1 + 25, text_x + 6, pill_y1 + 31], fill=(56, 189, 248, 240))
+    draw.text((text_x + 12, pill_y1 + 27), clean_label, font=f_sub, fill=(148, 163, 184, 245), anchor="lm")
+    # Metric with crisp bold typography
+    f_metric_large = get_font(FONT_PRETENDARD, 40)
+    draw.text((text_x, pill_y1 + 65), clean_metric, font=f_metric_large, fill=(255, 255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0, 180), anchor="lm")
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    img.save(output_path, "PNG", compress_level=1)
     return output_path
 
-
-
-VIRAL_KEYWORDS = {
-    "무조건", "절대", "진짜", "가장", "비밀", "핵심", "손해", "꿀팁", "대박", "필수",
-    "성공", "폭망", "미쳤다", "주의", "경고", "중요", "레전드", "이유", "방법", "정답",
-    "천재", "충격", "위험", "공짜", "무료", "최고", "최악", "비법", "공식", "원칙",
-    "팩트", "진실", "금지", "반드시", "기적", "극복", "혁신", "초대박", "쇼킹", "핵꿀팁"
+VIRAL_METRIC_KEYWORDS = {
+    "만원", "천원", "억원", "백만원", "천만원", "달러", "퍼센트", "%", "가지", "단계"
 }
 
-def is_smart_keyword(word_text: str) -> bool:
+VIRAL_EMOTION_KEYWORDS = {
+    "소름", "충격", "대박", "비밀", "후회", "절대", "진짜", "치트키", "꿀팁", "핵심",
+    "손해", "경고", "폭망", "미쳤다", "주의", "중요", "레전드", "이유", "방법", "정답",
+    "천재", "위험", "공짜", "무료", "최고", "최악", "비법", "공식", "원칙", "팩트",
+    "진실", "금지", "반드시", "기적", "극복", "혁신", "초대박", "쇼킹", "핵꿀팁"
+}
+
+VIRAL_POWER_KEYWORDS = {
+    "성공", "부자", "주식", "매출", "수익", "자산", "인생", "기회", "변화", "성장", "실전", "행동", "실행", "지름길", "습관"
+}
+
+def classify_smart_keyword(word_text: str) -> Optional[dict]:
     """
-    Detects high-converting viral trigger keywords:
-    - Numbers, currencies, percentages (e.g. 100만원, 10배, 1위, 3가지, 50%, 3초, 1억, 0원)
-    - Strong viral hooks and emotional emphasis words
+    Classifies viral keywords into 3 distinct international short-form visual tiers:
+    1. Metric: Numbers, Currency, Percent, Ranks -> Neon Lime Green (#00FF88)
+    2. Emotion: Shock, Warning, Mystery, Viral triggers -> Hot Neon Pink (#FF1493)
+    3. Power: Wealth, Success, Key action nouns -> Electric Cyber Yellow (#FFE600)
     """
     clean = re.sub(r'[^가-힣a-zA-Z0-9%]', '', word_text).strip()
     if not clean:
-        return False
-    if re.search(r'\d', clean):
-        return True
-    if clean in VIRAL_KEYWORDS:
-        return True
-    for kw in VIRAL_KEYWORDS:
-        if kw in clean and len(kw) >= 2:
-            return True
-    return False
+        return None
+
+    # 1. Metric / Number / Currency (Neon Lime Green)
+    # Digits automatically catch '100원', '2배', '3개', '1위', '5초', '10분'
+    if re.search(r'\d', clean) or any(m in clean for m in VIRAL_METRIC_KEYWORDS):
+        return {
+            "category": "metric",
+            "active_color": (0, 255, 136, 255),  # Neon Lime Green
+            "marker_color": (0, 255, 136, 170),
+            "font_scale": 1.15
+        }
+
+    # High-impact Korean wealth words (돈, 돈을, 돈이, 돈으로, 돈벌기 등)
+    if clean.startswith("돈") and (len(clean) == 1 or clean in ("돈을", "돈이", "돈으로", "돈벌기", "돈버는", "돈복")):
+        return {
+            "category": "power",
+            "active_color": (255, 230, 0, 255),
+            "marker_color": (255, 230, 0, 170),
+            "font_scale": 1.12
+        }
+
+    # 2. Emotional / Shock / Warning Hook (Hot Neon Pink)
+    if any(e in clean for e in VIRAL_EMOTION_KEYWORDS):
+        return {
+            "category": "emotion",
+            "active_color": (255, 20, 147, 255),  # Hot Neon Pink
+            "marker_color": (255, 20, 147, 170),
+            "font_scale": 1.15
+        }
+
+    # 3. Power Noun / Action (Electric Cyber Yellow)
+    if any(p in clean for p in VIRAL_POWER_KEYWORDS):
+        return {
+            "category": "power",
+            "active_color": (255, 230, 0, 255),  # Electric Cyber Yellow
+            "marker_color": (255, 230, 0, 170),
+            "font_scale": 1.12
+        }
+
+    return None
+
+def is_smart_keyword(word_text: str) -> bool:
+    return classify_smart_keyword(word_text) is not None
 
 def render_subtitle_frame(
     words_group: List[Word],
@@ -2438,12 +2579,13 @@ def render_subtitle_frame(
     canvas_w: int = 1080,
     canvas_h: int = 1920,
     y_center: int = 1360,
-    smart_keywords: bool = True
+    smart_keywords: bool = True,
+    bounce_scale: float = 1.0
 ):
     """
     Renders floating kinetic typography with configurable template colors, fonts, and highlighter tape.
-    Supports Submagic/OpusClip-style smart keyword contrast highlighting.
-    Guarantees clean, professional typography without artificial AI emojis.
+    Supports Submagic/OpusClip-style smart keyword contrast highlighting (Neon Green, Hot Pink, Cyber Yellow).
+    Supports physics-based spring elastic bounce (0.8x -> 1.15x -> 1.0x).
     """
     img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -2461,27 +2603,26 @@ def render_subtitle_frame(
     else:
         base_size = 56 if is_landscape else 72
 
-    active_font = get_font(chosen_font_path, base_size)
     normal_font = get_font(chosen_font_path, int(base_size * 0.88))
-    keyword_font = get_font(chosen_font_path, int(base_size * 1.06))
     stroke_w = 8 if (style == "clean_minimal" or "pret" in font_key or "gowun" in font_key or "song" in font_key) else 9
 
     space_w = 26
     emoji_pattern = r'[\U00010000-\U0010ffff\u2600-\u27bf\ud83c-\ud83e\ud83d\udc00-\udfff]'
 
-    # Measure sanitized words
+    # Measure sanitized words based on baseline resting metrics
     word_widths = []
     clean_words = []
+    kw_infos = []
     for i, w in enumerate(words_group):
         clean_w = re.sub(emoji_pattern, '', w.word).strip()
         clean_words.append(clean_w)
-        is_kw = smart_keywords and is_smart_keyword(clean_w)
-        if i == active_idx:
-            f = keyword_font if is_kw else active_font
-        else:
-            f = normal_font
+        kw_info = classify_smart_keyword(clean_w) if smart_keywords else None
+        kw_infos.append(kw_info)
+
+        scale = kw_info["font_scale"] if (kw_info and i == active_idx) else 1.0
+        f_meas = get_font(chosen_font_path, int(base_size * scale))
         if clean_w:
-            bbox = f.getbbox(clean_w)
+            bbox = f_meas.getbbox(clean_w)
             w_w = bbox[2] - bbox[0]
         else:
             w_w = 0
@@ -2501,20 +2642,21 @@ def render_subtitle_frame(
             continue
         w_len = word_widths[i]
         word_center_x = curr_x + w_len // 2
-        is_kw = smart_keywords and is_smart_keyword(clean_w)
+        kw_info = kw_infos[i]
 
         if i == active_idx:
-            f = keyword_font if is_kw else active_font
-            if is_kw:
-                # Vibrant contrasting pop: Neon Cyan or Neon Gold
-                col = (0, 255, 230, 255) if (active_color[0] > 200 and active_color[1] > 200 and active_color[2] < 100) else (*active_color, 255)
+            # Active word with elastic bounce scale applied
+            eff_scale = (kw_info["font_scale"] if kw_info else 1.0) * bounce_scale
+            f = get_font(chosen_font_path, max(12, int(base_size * eff_scale)))
+            if kw_info:
+                col = kw_info["active_color"]
             else:
                 col = (*active_color, 255)
-            s_width = stroke_w + (1 if is_kw else 0)
+            s_width = int(stroke_w * (1.1 if kw_info else 1.0) * max(0.85, bounce_scale))
         else:
             f = normal_font
-            if is_kw:
-                # Inactive keyword: gentle neon accent tint (soft warm highlight)
+            if kw_info:
+                # Inactive keyword: gentle neon accent tint
                 col = (255, 238, 140, 255)
             else:
                 col = (*normal_color, 255)
@@ -2523,22 +2665,55 @@ def render_subtitle_frame(
         # Highlighter Marker Tape behind active word or keyword
         if i == active_idx:
             eff_marker = marker_color
-            if not eff_marker and is_kw:
-                eff_marker = (255, 190, 0, 160)
+            if not eff_marker and kw_info:
+                eff_marker = kw_info["marker_color"]
             if eff_marker:
                 wb = f.getbbox(clean_w)
                 wh = wb[3] - wb[1]
-                draw_marker(draw, [curr_x, y_center - wh // 2, curr_x + w_len, y_center + wh // 2], color=eff_marker, pad_x=10)
+                draw_marker(draw, [curr_x - 6, y_center - wh // 2, curr_x + w_len + 6, y_center + wh // 2], color=eff_marker, pad_x=10)
 
-        # Drop shadow
+        # 1. Ambient Neon Glow for active keyword or bouncing word
+        if i == active_idx and (kw_info or bounce_scale > 1.05):
+            glow_base = kw_info["active_color"] if kw_info else col
+            gr, gg, gb = glow_base[0], glow_base[1], glow_base[2]
+            # Outer soft atmospheric glow
+            draw.text(
+                (word_center_x, y_center),
+                clean_w,
+                font=f,
+                fill=(gr, gg, gb, 45),
+                stroke_width=s_width + 10,
+                stroke_fill=(gr, gg, gb, 45),
+                anchor="mm"
+            )
+            # Inner vivid core glow
+            draw.text(
+                (word_center_x, y_center),
+                clean_w,
+                font=f,
+                fill=(gr, gg, gb, 90),
+                stroke_width=s_width + 5,
+                stroke_fill=(gr, gg, gb, 90),
+                anchor="mm"
+            )
+
+        # 2. Multi-tier High-Contrast Drop Shadow for 3D depth
         draw.text(
-            (word_center_x + 3, y_center + 4),
+            (word_center_x + 4, y_center + 5),
+            clean_w,
+            font=f,
+            fill=(0, 0, 0, 140),
+            anchor="mm"
+        )
+        draw.text(
+            (word_center_x + 2, y_center + 3),
             clean_w,
             font=f,
             fill=(0, 0, 0, 220),
             anchor="mm"
         )
-        # Stroke + fill
+
+        # 3. Crisp High-Definition Stroke + Solid Fill
         draw.text(
             (word_center_x, y_center),
             clean_w,
@@ -2551,7 +2726,7 @@ def render_subtitle_frame(
 
         curr_x += w_len + space_w
 
-    img.save(output_path, "PNG")
+    img.save(output_path, "PNG", compress_level=1)
 
 KOREAN_FILLER_WORDS = {
     "네", "예", "어", "음", "아", "저", "에", "으", "으음", "어어",
@@ -2631,7 +2806,8 @@ def generate_subtitle_track(
     canvas_h: int = 1920,
     y_center: int = 1360,
     filter_fillers: bool = True,
-    smart_keywords: bool = True
+    smart_keywords: bool = True,
+    bounce_animation: bool = True
 ) -> Tuple[str, str, List[Tuple[str, float]]]:
     """
     Generate timed PNG sequence and an ffconcat descriptor file.
@@ -2642,7 +2818,7 @@ def generate_subtitle_track(
 
     blank_png = str(out_dir / "blank.png")
     blank_img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
-    blank_img.save(blank_png, "PNG")
+    blank_img.save(blank_png, "PNG", compress_level=1)
 
     if filter_fillers:
         words = filter_filler_words(words)
@@ -2724,24 +2900,84 @@ def generate_subtitle_track(
 
             dur = max(0.06, round(w_end - curr_timeline, 3))
 
-            frame_filename = f"sub_{frame_idx:04d}.png"
-            frame_path = str(out_dir / frame_filename)
-            render_subtitle_frame(
-                grp,
-                active_idx=i,
-                output_path=frame_path,
-                style=style,
-                active_color=active_color,
-                normal_color=normal_color,
-                marker_color=marker_color,
-                font_name=font_name,
-                canvas_w=canvas_w,
-                canvas_h=canvas_h,
-                y_center=y_center,
-                smart_keywords=smart_keywords
-            )
+            if bounce_animation and dur >= 0.16:
+                # 3-phase physics spring bounce: 0.80x (onset) -> 1.15x (overshoot) -> 1.00x (settle)
+                p1_dur = 0.05
+                p2_dur = 0.07
+                p3_dur = round(dur - p1_dur - p2_dur, 3)
 
-            concat_entries.append((frame_filename, dur))
+                f1_name = f"sub_{frame_idx:04d}_p1.png"
+                render_subtitle_frame(
+                    grp, active_idx=i, output_path=str(out_dir / f1_name),
+                    style=style, active_color=active_color, normal_color=normal_color,
+                    marker_color=marker_color, font_name=font_name,
+                    canvas_w=canvas_w, canvas_h=canvas_h, y_center=y_center,
+                    smart_keywords=smart_keywords, bounce_scale=0.80
+                )
+                concat_entries.append((f1_name, p1_dur))
+
+                f2_name = f"sub_{frame_idx:04d}_p2.png"
+                render_subtitle_frame(
+                    grp, active_idx=i, output_path=str(out_dir / f2_name),
+                    style=style, active_color=active_color, normal_color=normal_color,
+                    marker_color=marker_color, font_name=font_name,
+                    canvas_w=canvas_w, canvas_h=canvas_h, y_center=y_center,
+                    smart_keywords=smart_keywords, bounce_scale=1.15
+                )
+                concat_entries.append((f2_name, p2_dur))
+
+                f3_name = f"sub_{frame_idx:04d}_p3.png"
+                render_subtitle_frame(
+                    grp, active_idx=i, output_path=str(out_dir / f3_name),
+                    style=style, active_color=active_color, normal_color=normal_color,
+                    marker_color=marker_color, font_name=font_name,
+                    canvas_w=canvas_w, canvas_h=canvas_h, y_center=y_center,
+                    smart_keywords=smart_keywords, bounce_scale=1.00
+                )
+                concat_entries.append((f3_name, p3_dur))
+            elif bounce_animation and dur >= 0.11:
+                # 2-phase micro bounce for short duration words
+                p1_dur = 0.05
+                p2_dur = round(dur - p1_dur, 3)
+
+                f1_name = f"sub_{frame_idx:04d}_p1.png"
+                render_subtitle_frame(
+                    grp, active_idx=i, output_path=str(out_dir / f1_name),
+                    style=style, active_color=active_color, normal_color=normal_color,
+                    marker_color=marker_color, font_name=font_name,
+                    canvas_w=canvas_w, canvas_h=canvas_h, y_center=y_center,
+                    smart_keywords=smart_keywords, bounce_scale=1.12
+                )
+                concat_entries.append((f1_name, p1_dur))
+
+                f2_name = f"sub_{frame_idx:04d}_p2.png"
+                render_subtitle_frame(
+                    grp, active_idx=i, output_path=str(out_dir / f2_name),
+                    style=style, active_color=active_color, normal_color=normal_color,
+                    marker_color=marker_color, font_name=font_name,
+                    canvas_w=canvas_w, canvas_h=canvas_h, y_center=y_center,
+                    smart_keywords=smart_keywords, bounce_scale=1.00
+                )
+                concat_entries.append((f2_name, p2_dur))
+            else:
+                frame_filename = f"sub_{frame_idx:04d}.png"
+                frame_path = str(out_dir / frame_filename)
+                render_subtitle_frame(
+                    grp,
+                    active_idx=i,
+                    output_path=frame_path,
+                    style=style,
+                    active_color=active_color,
+                    normal_color=normal_color,
+                    marker_color=marker_color,
+                    font_name=font_name,
+                    canvas_w=canvas_w,
+                    canvas_h=canvas_h,
+                    y_center=y_center,
+                    smart_keywords=smart_keywords,
+                    bounce_scale=1.00
+                )
+                concat_entries.append((frame_filename, dur))
             curr_timeline += dur
             frame_idx += 1
 

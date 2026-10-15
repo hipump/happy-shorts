@@ -67,13 +67,29 @@ def generate_youtube_metadata_file(
     b = highlight.score_breakdown
     breakdown_str = f"Hook: {b.get('hook', 26)}/30, Flow: {b.get('flow', 22)}/25, Value: {b.get('value', 22)}/25, Trend: {b.get('trend', 18)}/20"
 
+    # Viral hook variants & loop strategy
+    hook_vars = getattr(highlight, "hook_variants", {}) or {}
+    curiosity_h = hook_vars.get("curiosity", hook_clean)
+    urgency_h = hook_vars.get("urgency", f"지금 안 보면 손해 보는 {title_clean}")
+    benefit_h = hook_vars.get("benefit", f"단 30초 만에 끝내는 {title_clean}")
+    loop_sc = getattr(highlight, "loop_score", 85)
+    stat_p = getattr(highlight, "stat_pill", None)
+    stat_desc = f"감지됨 [{stat_p.get('metric', '')} - {stat_p.get('label', '')}] (3.8초경 팝업)" if stat_p else "미감지 (일반 자막 모드)"
+
     content = f"""================================================================================
 🎬 유튜브 쇼츠 업로드 가이드 (2026 알고리즘 최적화)
 파일: {os.path.basename(output_video_path)}
-바이럴 점수: {highlight.virality_score}점 ({breakdown_str})
+바이럴 종합 점수: {highlight.virality_score}점 ({breakdown_str})
+🔁 무한 루프 싱크 지수: {loop_sc}점 / 100점 (끝문장-첫문장 자연 순환 설계)
+📊 키노트 수치 카드: {stat_desc}
 ================================================================================
 
-📌 [추천 제목 (CTR 최적화 - 55~60자 이내)]
+🎯 [훅 A/B 테스트 추천 헤드라인 3종]
+• [호기심 자극형] {curiosity_h}
+• [손실 회피형]   {urgency_h}
+• [극대 이득형]   {benefit_h}
+
+📌 [추천 업로드 제목 (CTR 최적화 - 55~60자 이내)]
 1안: {t1}
 2안: {t2}
 3안: {t3}
@@ -82,7 +98,7 @@ def generate_youtube_metadata_file(
 {title_clean}의 실전 핵심 내용을 빠르게 정리했습니다!
 {summary_lines}
 
-영상이 도움되셨다면 구독과 좋아요 부탁드립니다!
+영상 끝까지 시청해주셔서 감사합니다! 구독과 좋아요는 큰 힘이 됩니다.
 {tags_str}
 
 🏷️ [추천 해시태그 (3~5개 엄선)]
@@ -115,9 +131,13 @@ class ShortsPipeline:
         filter_fillers: bool = True,
         bgm_track: str = "auto",
         enable_sfx: bool = True,
-        color_grade: str = "vibrant",
+        color_grade: str = "vibrant_tech",
         dynamic_zoom: bool = True,
-        smart_keywords: bool = True
+        smart_keywords: bool = True,
+        bounce_animation: bool = True,
+        hook_variant_type: str = "default",
+        enable_stat_pill: bool = True,
+        seamless_loop: bool = True
     ):
         self.whisper_model = whisper_model
         self.llm_model = llm_model
@@ -141,6 +161,10 @@ class ShortsPipeline:
         self.color_grade = color_grade
         self.dynamic_zoom = dynamic_zoom
         self.smart_keywords = smart_keywords
+        self.bounce_animation = bounce_animation
+        self.hook_variant_type = hook_variant_type
+        self.enable_stat_pill = enable_stat_pill
+        self.seamless_loop = seamless_loop
 
     def run(
         self,
@@ -317,7 +341,11 @@ class ShortsPipeline:
                     enable_sfx=self.enable_sfx,
                     color_grade=self.color_grade,
                     dynamic_zoom=self.dynamic_zoom,
-                    smart_keywords=self.smart_keywords
+                    smart_keywords=self.smart_keywords,
+                    bounce_animation=self.bounce_animation,
+                    hook_variant_type=self.hook_variant_type,
+                    enable_stat_pill=self.enable_stat_pill,
+                    seamless_loop=self.seamless_loop
                 )
             else:
                 ratio_label = "16:9 가로" if self.aspect_ratio == "16:9" else "9:16 세로"
@@ -351,7 +379,11 @@ class ShortsPipeline:
                         enable_sfx=self.enable_sfx,
                         color_grade=self.color_grade,
                         dynamic_zoom=self.dynamic_zoom,
-                        smart_keywords=self.smart_keywords
+                        smart_keywords=self.smart_keywords,
+                        bounce_animation=self.bounce_animation,
+                        hook_variant_type=self.hook_variant_type,
+                        enable_stat_pill=self.enable_stat_pill,
+                        seamless_loop=self.seamless_loop
                     )
                 console.print(f"  [bold green]✔ 쇼츠 생성 완료:[/bold green] {output_path}")
 

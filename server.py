@@ -101,9 +101,13 @@ class RenderRequest(BaseModel):
     filter_fillers: bool = Field(default=True, description="추임새/말버릇(네, 어, 음 등) 자막 자동 제거")
     bgm_track: str = Field(default="auto", description="배경음악 트랙 (auto, lofi, tech, cinematic, none)")
     enable_sfx: bool = Field(default=True, description="효과음 (SFX: 훅 임팩트, 전환 우쉬, 키워드 딩)")
-    color_grade: str = Field(default="vibrant", description="스튜디오 색감 보정 (vibrant, cinematic, clean, none)")
+    color_grade: str = Field(default="vibrant_tech", description="시네마틱 컬러 그레이딩 (vibrant_tech, warm_clean, film_contrast, clean, none)")
     dynamic_zoom: bool = Field(default=True, description="다이내믹 펀치인 줌")
     smart_keywords: bool = Field(default=True, description="스마트 키워드 자막 하이라이트")
+    bounce_animation: bool = Field(default=True, description="글자별 탄성 바운스 애니메이션 (Spring Bounce)")
+    hook_variant_type: str = Field(default="default", description="선택된 훅 헤드라인 타입 (default, curiosity, urgency, benefit)")
+    enable_stat_pill: bool = Field(default=True, description="키노트 글래스모피즘 수치 카드 팝업")
+    seamless_loop: bool = Field(default=True, description="무한 반복 시청을 위한 오디오 마이크로 크로스페이드")
     target_filename: Optional[str] = None
 
 # Endpoints
@@ -119,9 +123,10 @@ def list_audio_presets():
             {"id": "none", "name": "🔇 BGM 끄기 (음소거)", "description": "배경음악 없이 원본 음성만 유지"}
         ],
         "color_grades": [
-            {"id": "vibrant", "name": "🌈 스튜디오 비비드 (추천)", "description": "선명한 대비와 생동감 넘치는 채도 + 엣지 샤프닝"},
-            {"id": "cinematic", "name": "🎞️ 시네마틱 필름", "description": "깊이 있는 영화 톤 콘트라스트"},
-            {"id": "clean", "name": "✨ 클린 샤프닝", "description": "색감 왜곡 없이 또렷한 윤곽선 보정"},
+            {"id": "vibrant_tech", "name": "⚡ 바이브런트 테크 (알고리즘 CTR 최적화)", "description": "선명한 고대비와 펀치감 넘치는 채도 + 엣지 샤프닝"},
+            {"id": "warm_clean", "name": "☀️ 웜 클린 스튜디오 (인물/토크 최적화)", "description": "화사하고 따뜻한 인물 피부톤과 깨끗한 스튜디오 조명"},
+            {"id": "film_contrast", "name": "🎬 시네마틱 필름 (다큐/인터뷰)", "description": "깊이 있는 암부와 헐리우드 틸앤오렌지 영화적 대비"},
+            {"id": "clean", "name": "✨ 클린 샤프닝", "description": "색감 왜곡 없이 또렷한 엣지 윤곽선 보정"},
             {"id": "none", "name": "원본 유지", "description": "원본 영상 색감 그대로"}
         ],
         "sfx_features": [
@@ -600,17 +605,17 @@ async def run_render_task(job_id: str, req: RenderRequest):
             render_cb = make_clip_progress_cb(3)
             await loop.run_in_executor(
                 None,
-                lambda: render_short(
+                lambda h=h_obj, o_p=str(out_path), t=tpl, c_b=render_cb: render_short(
                     metadata=metadata,
-                    highlight=h_obj,
+                    highlight=h,
                     transcript=transcript,
-                    template=tpl,
-                    output_path=str(out_path),
-                    show_subtitles=req.show_subtitles and tpl.subtitle_style != "none",
-                    subtitle_style=tpl.subtitle_style,
-                    active_color=tpl.active_color,
-                    normal_color=tpl.normal_color,
-                    font_name=tpl.font_name,
+                    template=t,
+                    output_path=o_p,
+                    show_subtitles=req.show_subtitles and t.subtitle_style != "none",
+                    subtitle_style=t.subtitle_style,
+                    active_color=t.active_color,
+                    normal_color=t.normal_color,
+                    font_name=t.font_name,
                     normalize_audio=True,
                     aspect_ratio=req.aspect_ratio,
                     remove_subtitles=req.remove_subtitles,
@@ -620,18 +625,22 @@ async def run_render_task(job_id: str, req: RenderRequest):
                     color_grade=req.color_grade,
                     dynamic_zoom=req.dynamic_zoom,
                     smart_keywords=req.smart_keywords,
-                    callback=render_cb
+                    bounce_animation=req.bounce_animation,
+                    hook_variant_type=req.hook_variant_type,
+                    enable_stat_pill=req.enable_stat_pill,
+                    seamless_loop=req.seamless_loop,
+                    callback=c_b
                 )
             )
 
             # Generate YouTube SEO Text File
             await loop.run_in_executor(
                 None,
-                lambda: generate_youtube_metadata_file(
-                    output_txt_path=str(out_txt_path),
-                    highlight=h_obj,
+                lambda h=h_obj, o_t=str(out_txt_path), o_p=str(out_path): generate_youtube_metadata_file(
+                    output_txt_path=o_t,
+                    highlight=h,
                     metadata=metadata,
-                    output_video_path=str(out_path)
+                    output_video_path=o_p
                 )
             )
 
@@ -643,9 +652,9 @@ async def run_render_task(job_id: str, req: RenderRequest):
             try:
                 await loop.run_in_executor(
                     None,
-                    lambda: subprocess.run([
-                        "ffmpeg", "-y", "-ss", "00:00:01.5", "-i", str(out_path),
-                        "-vframes", "1", "-q:v", "2", str(cover_path)
+                    lambda o_p=str(out_path), c_p=str(cover_path): subprocess.run([
+                        "ffmpeg", "-y", "-ss", "00:00:01.5", "-i", o_p,
+                        "-vframes", "1", "-q:v", "2", c_p
                     ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
                 )
             except Exception:

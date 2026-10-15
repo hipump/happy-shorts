@@ -25,6 +25,19 @@ export interface Highlight {
   id: number;
   title: string;
   hook_text: string;
+  hook_variants?: {
+    curiosity?: string;
+    urgency?: string;
+    benefit?: string;
+  };
+  loop_score?: number;
+  stat_pill?: {
+    text: string;
+    metric: string;
+    label: string;
+    icon: string;
+    rel_time: number;
+  };
   start_time: number;
   end_time: number;
   duration: number;

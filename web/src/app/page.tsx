@@ -42,6 +42,9 @@ import {
   Music,
   Palette,
   ZoomIn,
+  Smartphone,
+  Target,
+  Infinity,
 } from "lucide-react";
 import {
   Template,
@@ -52,6 +55,7 @@ import {
   SystemStatus,
 } from "@/types";
 import TemplateMockupCard from "@/components/TemplateMockupCard";
+import SafeZoneOverlay, { SafeZonePlatform } from "@/components/SafeZoneOverlay";
 
 export default function HappyShortsApp() {
   const [activeTab, setActiveTab] = useState<"studio" | "gallery">("studio");
@@ -81,12 +85,21 @@ export default function HappyShortsApp() {
   const [removeSubtitles, setRemoveSubtitles] = useState<boolean>(false);
   const [filterFillers, setFilterFillers] = useState<boolean>(true);
 
-  // Pro Studio Quality Options (BGM, SFX, Color Grading, Dynamic Zoom, Smart Keywords)
+  // Pro Studio Quality Options (BGM, SFX, Color Grading, Dynamic Zoom, Smart Keywords, Keynote Stat Pill, Seamless Loop)
+  const [studioOptionTab, setStudioOptionTab] = useState<"audio" | "visual" | "typography">("audio");
   const [bgmTrack, setBgmTrack] = useState<string>("auto");
   const [enableSfx, setEnableSfx] = useState<boolean>(true);
-  const [colorGrade, setColorGrade] = useState<string>("vibrant");
+  const [colorGrade, setColorGrade] = useState<string>("vibrant_tech");
   const [dynamicZoom, setDynamicZoom] = useState<boolean>(true);
   const [smartKeywords, setSmartKeywords] = useState<boolean>(true);
+  const [bounceAnimation, setBounceAnimation] = useState<boolean>(true);
+  const [enableStatPill, setEnableStatPill] = useState<boolean>(true);
+  const [seamlessLoop, setSeamlessLoop] = useState<boolean>(true);
+
+  // Viral Retention & A/B Hook Testing
+  const [selectedHookVariants, setSelectedHookVariants] = useState<Record<number, string>>({});
+  const [safeZoneMode, setSafeZoneMode] = useState<SafeZonePlatform>("none");
+  const [previewSafeZoneMode, setPreviewSafeZoneMode] = useState<SafeZonePlatform>("none");
 
   // Step 3: Analysis
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -343,14 +356,27 @@ export default function HappyShortsApp() {
     );
     setCurrentStep(4);
 
+    const targetHighlightsWithVariants = targetHighlights.map((h) => {
+      const chosenVar = selectedHookVariants[h.id];
+      let hook = h.hook_text;
+      if (chosenVar && chosenVar !== "default" && h.hook_variants) {
+        const v = (h.hook_variants as Record<string, string | undefined>)[chosenVar];
+        if (v) hook = v;
+      }
+      return {
+        ...h,
+        hook_text: hook,
+      };
+    });
+
     try {
       const res = await fetch("/api/render", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           source: src,
-          highlights: targetHighlights,
-          highlight: targetHighlights[0],
+          highlights: targetHighlightsWithVariants,
+          highlight: targetHighlightsWithVariants[0],
           template_id: selectedTemplateId,
           subtitle_style: subtitleStyle,
           show_badge: showBadge,
@@ -363,6 +389,10 @@ export default function HappyShortsApp() {
           color_grade: colorGrade,
           dynamic_zoom: dynamicZoom,
           smart_keywords: smartKeywords,
+          bounce_animation: bounceAnimation,
+          hook_variant_type: selectedHookVariants[targetHighlightsWithVariants[0]?.id] || "default",
+          enable_stat_pill: enableStatPill,
+          seamless_loop: seamlessLoop,
         }),
       });
 
@@ -595,7 +625,7 @@ export default function HappyShortsApp() {
                       <button
                         onClick={() => {
                           if (!isAnalyzing && !isRendering) {
-                            if (s.num <= 2 || isDone) {
+                            if (s.num <= 2 || isDone || (s.num === 3 && highlights.length > 0)) {
                               setCurrentStep(s.num);
                             }
                           }
@@ -631,145 +661,190 @@ export default function HappyShortsApp() {
               </div>
             </div>
 
-            {/* STEP 1: SOURCE SELECTION */}
+            {/* STEP 1: SOURCE SELECTION & CORE FORMAT */}
             {currentStep === 1 && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 glass-panel p-6 rounded-2xl border border-slate-800/80 flex flex-col gap-6">
+              <div className="glass-panel p-6 sm:p-8 rounded-2xl border border-slate-800/80 shadow-2xl flex flex-col gap-6 max-w-5xl mx-auto w-full">
+                {/* Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-slate-800/80">
                   <div>
-                    <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2.5">
                       <Video className="w-5 h-5 text-indigo-400" />
-                      스텝 1. 변환할 영상 소스를 선택하세요
+                      스텝 1. 영상 소스 입력 및 기본 규격 설정
                     </h2>
                     <p className="text-xs text-slate-400 mt-1">
-                      유튜브 영상 주소를 넣거나, 로컬 파일 또는 이미 작업했던 캐시 영상을 원클릭으로 재사용할 수 있습니다.
+                      유튜브 URL, 최근 작업 캐시, 또는 로컬 PC 영상을 지정하고 쇼츠 출력 규격을 선택하세요.
                     </p>
                   </div>
-
-                  {/* Source Mode Tabs */}
-                  <div className="grid grid-cols-3 gap-3 p-1 bg-slate-900/80 rounded-xl border border-slate-800">
-                    <button
-                      onClick={() => setSourceMode("youtube")}
-                      className={`py-2.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${
-                        sourceMode === "youtube"
-                          ? "bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-md"
-                          : "text-slate-400 hover:text-slate-200"
-                      }`}
-                    >
-                      <Radio className="w-4 h-4" />
-                      유튜브 URL (자동 다운)
-                    </button>
-                    <button
-                      onClick={() => setSourceMode("recent")}
-                      className={`py-2.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${
-                        sourceMode === "recent"
-                          ? "bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md"
-                          : "text-slate-400 hover:text-slate-200"
-                      }`}
-                    >
-                      <Zap className="w-4 h-4" />
-                      최근 캐시 영상 ({recentVideos.length}개)
-                    </button>
-                    <button
-                      onClick={() => setSourceMode("local")}
-                      className={`py-2.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${
-                        sourceMode === "local"
-                          ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md"
-                          : "text-slate-400 hover:text-slate-200"
-                      }`}
-                    >
-                      <FolderOpen className="w-4 h-4" />
-                      내 PC 로컬 영상
-                    </button>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-semibold flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      100% 로컬 On-Device
+                    </span>
                   </div>
+                </div>
 
-                  {/* Mode 1: YouTube */}
-                  {sourceMode === "youtube" && (
-                    <div className="flex flex-col gap-3">
-                      <label className="text-xs font-semibold text-slate-300">유튜브 영상 URL 또는 영상 ID</label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          placeholder="https://www.youtube.com/watch?v=... 또는 단축 URL"
-                          value={youtubeUrl}
-                          onChange={(e) => setYoutubeUrl(e.target.value)}
-                          className="w-full bg-slate-950/80 border border-slate-700/80 focus:border-indigo-500 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition"
-                        />
-                      </div>
-                      <p className="text-[11px] text-slate-500 flex items-center gap-1">
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                        이전에 작업했던 영상은 재다운로드 및 음성인식 없이 캐시를 자동 재사용합니다.
-                      </p>
-                    </div>
-                  )}
+                {/* Source Mode Tabs */}
+                <div className="grid grid-cols-3 gap-2.5 p-1 bg-slate-900/80 rounded-xl border border-slate-800">
+                  <button
+                    onClick={() => setSourceMode("youtube")}
+                    className={`py-2.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${
+                      sourceMode === "youtube"
+                        ? "bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-md shadow-red-600/20"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <Radio className="w-4 h-4" />
+                    유튜브 URL
+                  </button>
+                  <button
+                    onClick={() => setSourceMode("recent")}
+                    className={`py-2.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${
+                      sourceMode === "recent"
+                        ? "bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md shadow-amber-600/20"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <Zap className="w-4 h-4" />
+                    최근 작업 캐시 ({recentVideos.length}개)
+                  </button>
+                  <button
+                    onClick={() => setSourceMode("local")}
+                    className={`py-2.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${
+                      sourceMode === "local"
+                        ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-600/20"
+                        : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <FolderOpen className="w-4 h-4" />
+                    내 PC 로컬 영상
+                  </button>
+                </div>
 
-                  {/* Mode 2: Recent Cached Videos */}
-                  {sourceMode === "recent" && (
-                    <div className="flex flex-col gap-3">
-                      <label className="text-xs font-semibold text-slate-300">
-                        재사용할 캐시 영상 선택 (STT 즉시 재사용)
-                      </label>
-                      {recentVideos.length === 0 ? (
-                        <div className="p-8 text-center bg-slate-950/40 rounded-xl border border-slate-800 text-slate-500 text-xs">
-                          저장된 이전 작업 영상이 없습니다. 유튜브 URL을 먼저 입력해 보세요.
-                        </div>
-                      ) : (
-                        <div className="max-h-56 overflow-y-auto flex flex-col gap-2 pr-1">
-                          {recentVideos.map((v) => {
-                            const isSelected = selectedRecent?.filename === v.filename;
-                            return (
-                              <div
-                                key={v.filename}
-                                onClick={() => setSelectedRecent(v)}
-                                className={`p-3 rounded-xl border cursor-pointer transition flex items-center justify-between ${
-                                  isSelected
-                                    ? "bg-amber-500/10 border-amber-500/50 text-amber-200"
-                                    : "bg-slate-950/50 border-slate-800/80 hover:bg-slate-900 text-slate-300"
-                                }`}
-                              >
-                                <div className="flex items-center gap-3 overflow-hidden">
-                                  <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center flex-shrink-0 font-bold text-xs">
-                                    MP4
-                                  </div>
-                                  <div className="overflow-hidden">
-                                    <p className="text-xs font-semibold truncate">{v.filename}</p>
-                                    <p className="text-[11px] text-slate-500">{v.size_mb} MB</p>
-                                  </div>
-                                </div>
-                                {isSelected && (
-                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500 text-black">
-                                    선택됨
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Mode 3: Local File */}
-                  {sourceMode === "local" && (
-                    <div className="flex flex-col gap-3">
-                      <label className="text-xs font-semibold text-slate-300">로컬 비디오 파일 경로</label>
+                {/* Mode 1: YouTube Input */}
+                {sourceMode === "youtube" && (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-slate-300">유튜브 영상 URL 또는 영상 ID</label>
+                    <div className="relative">
                       <input
                         type="text"
-                        placeholder="/Users/.../my_video.mp4"
-                        value={localPath}
-                        onChange={(e) => setLocalPath(e.target.value)}
+                        placeholder="https://www.youtube.com/watch?v=... 또는 https://youtu.be/..."
+                        value={youtubeUrl}
+                        onChange={(e) => setYoutubeUrl(e.target.value)}
                         className="w-full bg-slate-950/80 border border-slate-700/80 focus:border-indigo-500 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition"
                       />
-                      <p className="text-[11px] text-slate-500">
-                        터미널이나 파인더에서 파일을 복사하여 파일 절대 경로를 붙여넣으세요.
-                      </p>
                     </div>
-                  )}
+                    <p className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                      이전에 작업했던 영상은 재다운로드 및 음성인식 없이 캐시를 자동 재사용합니다.
+                    </p>
+                  </div>
+                )}
 
-                  {/* Settings: Duration & Clips */}
-                  <div className="pt-4 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Mode 2: Recent Cached Videos */}
+                {sourceMode === "recent" && (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-slate-300">
+                      재사용할 캐시 영상 선택 (STT 즉시 재사용)
+                    </label>
+                    {recentVideos.length === 0 ? (
+                      <div className="p-8 text-center bg-slate-950/40 rounded-xl border border-slate-800 text-slate-500 text-xs">
+                        저장된 이전 작업 영상이 없습니다. 유튜브 URL을 먼저 입력해 보세요.
+                      </div>
+                    ) : (
+                      <div className="max-h-56 overflow-y-auto flex flex-col gap-2 pr-1">
+                        {recentVideos.map((v) => {
+                          const isSelected = selectedRecent?.filename === v.filename;
+                          return (
+                            <div
+                              key={v.filename}
+                              onClick={() => setSelectedRecent(v)}
+                              className={`p-3 rounded-xl border cursor-pointer transition flex items-center justify-between ${
+                                isSelected
+                                  ? "bg-amber-500/10 border-amber-500/50 text-amber-200 shadow-sm"
+                                  : "bg-slate-950/50 border-slate-800/80 hover:bg-slate-900 text-slate-300"
+                              }`}
+                            >
+                              <div className="flex items-center gap-3 overflow-hidden">
+                                <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center flex-shrink-0 font-bold text-xs">
+                                  MP4
+                                </div>
+                                <div className="overflow-hidden">
+                                  <p className="text-xs font-semibold truncate">{v.filename}</p>
+                                  <p className="text-[11px] text-slate-500">{v.size_mb} MB</p>
+                                </div>
+                              </div>
+                              {isSelected && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500 text-black">
+                                  선택됨
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Mode 3: Local File */}
+                {sourceMode === "local" && (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-semibold text-slate-300">로컬 비디오 파일 절대 경로</label>
+                    <input
+                      type="text"
+                      placeholder="/Users/.../my_video.mp4"
+                      value={localPath}
+                      onChange={(e) => setLocalPath(e.target.value)}
+                      className="w-full bg-slate-950/80 border border-slate-700/80 focus:border-indigo-500 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition"
+                    />
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      터미널이나 파인더에서 파일을 복사하여 파일 절대 경로를 붙여넣으세요.
+                    </p>
+                  </div>
+                )}
+
+                {/* Core Specifications & Cleanups 2-Column Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                  {/* Left Column: Aspect Ratio & Duration */}
+                  <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800/80 flex flex-col gap-3.5">
                     <div>
                       <label className="text-xs font-semibold text-slate-300 flex items-center justify-between mb-2">
-                        <span>쇼츠 목표 재생 시간</span>
+                        <span>화면 비율 (Aspect Ratio)</span>
+                        <span className="text-indigo-400 font-bold">
+                          {aspectRatio === "9:16" ? "9:16 세로 (쇼츠)" : "16:9 가로 (와이드)"}
+                        </span>
+                      </label>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setAspectRatio("9:16")}
+                          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
+                            aspectRatio === "9:16"
+                              ? "bg-indigo-600/20 border-indigo-500 text-indigo-300 shadow-sm"
+                              : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
+                          }`}
+                        >
+                          <span>📱 세로 9:16</span>
+                          <span className="text-[10px] text-amber-400 font-normal">얼굴 자동추적</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAspectRatio("16:9")}
+                          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
+                            aspectRatio === "16:9"
+                              ? "bg-indigo-600/20 border-indigo-500 text-indigo-300 shadow-sm"
+                              : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
+                          }`}
+                        >
+                          <span>🖥️ 가로 16:9</span>
+                          <span className="text-[10px] text-slate-500 font-normal">와이드</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 flex items-center justify-between mb-2">
+                        <span>목표 재생 시간</span>
                         <span className="text-indigo-400 font-bold">
                           {minDur}초 ~ {maxDur}초
                         </span>
@@ -789,8 +864,8 @@ export default function HappyShortsApp() {
                             }}
                             className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-semibold border transition ${
                               minDur === d.min && maxDur === d.max
-                                ? "bg-indigo-600/20 border-indigo-500 text-indigo-300"
-                                : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
+                                ? "bg-indigo-600/20 border-indigo-500 text-indigo-300 shadow-sm"
+                                : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
                             }`}
                           >
                             {d.label}
@@ -801,7 +876,7 @@ export default function HappyShortsApp() {
 
                     <div>
                       <label className="text-xs font-semibold text-slate-300 flex items-center justify-between mb-2">
-                        <span>하이라이트 후보 추출 개수</span>
+                        <span>후보 추출 개수</span>
                         <span className="text-indigo-400 font-bold">{clipsCount}개 후보</span>
                       </label>
                       <div className="flex gap-2">
@@ -812,8 +887,8 @@ export default function HappyShortsApp() {
                             onClick={() => setClipsCount(cnt)}
                             className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold border transition ${
                               clipsCount === cnt
-                                ? "bg-indigo-600/20 border-indigo-500 text-indigo-300"
-                                : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
+                                ? "bg-indigo-600/20 border-indigo-500 text-indigo-300 shadow-sm"
+                                : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
                             }`}
                           >
                             {cnt}개
@@ -823,62 +898,28 @@ export default function HappyShortsApp() {
                     </div>
                   </div>
 
-                  {/* Settings: Aspect Ratio & Subtitle Removal */}
-                  <div className="pt-4 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Right Column: AI Cleanups */}
+                  <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800/80 flex flex-col justify-between gap-3.5">
                     <div>
                       <label className="text-xs font-semibold text-slate-300 flex items-center justify-between mb-2">
-                        <span>영상의 화면 비율 (Aspect Ratio)</span>
-                        <span className="text-indigo-400 font-bold">
-                          {aspectRatio === "9:16" ? "9:16 세로 (쇼츠)" : "16:9 가로 (와이드)"}
-                        </span>
-                      </label>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setAspectRatio("9:16")}
-                          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
-                            aspectRatio === "9:16"
-                              ? "bg-indigo-600/20 border-indigo-500 text-indigo-300 shadow-sm"
-                              : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
-                          }`}
-                        >
-                          <span>📱 세로 (9:16)</span>
-                          <span className="text-[10px] text-amber-400 font-normal">얼굴 자동 추적</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAspectRatio("16:9")}
-                          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
-                            aspectRatio === "16:9"
-                              ? "bg-indigo-600/20 border-indigo-500 text-indigo-300 shadow-sm"
-                              : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
-                          }`}
-                        >
-                          <span>🖥️ 가로 (16:9)</span>
-                          <span className="text-[10px] text-slate-500 font-normal">유튜브 와이드</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-semibold text-slate-300 flex items-center justify-between mb-2">
-                        <span>원본 영상 자막 처리</span>
+                        <span>원본 영상 자막 클린업</span>
                         <span className={`font-bold ${removeSubtitles ? "text-amber-400" : "text-slate-500"}`}>
-                          {removeSubtitles ? "AI 제거 활성화" : "원본 자막 유지"}
+                          {removeSubtitles ? "LaMa AI 복원 켜짐" : "원본 유지"}
                         </span>
                       </label>
                       <button
                         type="button"
                         onClick={() => setRemoveSubtitles(!removeSubtitles)}
-                        className={`w-full py-2 px-3 rounded-xl text-xs font-semibold border transition flex items-center justify-between ${
+                        className={`w-full p-2.5 rounded-xl text-xs font-semibold border transition flex items-center justify-between ${
                           removeSubtitles
                             ? "bg-amber-500/10 border-amber-500/50 text-amber-200 shadow-sm"
-                            : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
+                            : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
                         }`}
                       >
-                        <span className="text-left truncate pr-2">
-                          원본 자막 삭제 (ai 처리라서 일부 뭉개짐이 있을 수 있음)
-                        </span>
+                        <div className="text-left">
+                          <p className="font-bold text-slate-200">🧹 LaMa 딥러닝 인페인팅</p>
+                          <p className="text-[11px] text-slate-400 mt-0.5">블러 흔적 없이 배경/의류 완벽 복원</p>
+                        </div>
                         <div
                           className={`w-8 h-4.5 flex items-center rounded-full p-0.5 transition duration-300 flex-shrink-0 ${
                             removeSubtitles ? "bg-amber-500 justify-end" : "bg-slate-800 justify-start"
@@ -893,21 +934,22 @@ export default function HappyShortsApp() {
                       <label className="text-xs font-semibold text-slate-300 flex items-center justify-between mb-2">
                         <span>말버릇 / 추임새 자막 정리</span>
                         <span className={`font-bold ${filterFillers ? "text-emerald-400" : "text-slate-500"}`}>
-                          {filterFillers ? "자동 필터링 (추천)" : "모든 단어 표시"}
+                          {filterFillers ? "자동 필터링 켜짐" : "모든 단어 표시"}
                         </span>
                       </label>
                       <button
                         type="button"
                         onClick={() => setFilterFillers(!filterFillers)}
-                        className={`w-full py-2 px-3 rounded-xl text-xs font-semibold border transition flex items-center justify-between ${
+                        className={`w-full p-2.5 rounded-xl text-xs font-semibold border transition flex items-center justify-between ${
                           filterFillers
                             ? "bg-emerald-500/10 border-emerald-500/50 text-emerald-200 shadow-sm"
-                            : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
+                            : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
                         }`}
                       >
-                        <span className="text-left truncate pr-2">
-                          추임새/말버릇 제거 (어, 음, 네, 아 등의 단독 팝업 방지)
-                        </span>
+                        <div className="text-left">
+                          <p className="font-bold text-slate-200">✨ 추임새 자동 정리</p>
+                          <p className="text-[11px] text-slate-400 mt-0.5">어, 음, 네, 아 등의 단독 팝업 방지</p>
+                        </div>
                         <div
                           className={`w-8 h-4.5 flex items-center rounded-full p-0.5 transition duration-300 flex-shrink-0 ${
                             filterFillers ? "bg-emerald-500 justify-end" : "bg-slate-800 justify-start"
@@ -917,44 +959,32 @@ export default function HappyShortsApp() {
                         </div>
                       </button>
                     </div>
-                  </div>
 
-                  <div className="flex justify-end pt-2">
-                    <button
-                      onClick={handleProceedToTemplate}
-                      className="px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold text-sm flex items-center gap-2 shadow-lg shadow-indigo-600/20 transition"
-                    >
-                      다음 단계: 템플릿 선택
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
+                    <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/60 text-[11px] text-slate-400 flex items-center gap-2">
+                      <Zap className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                      <span>스텝 1에서 설정한 규격은 이후 템플릿과 렌더링에 자동 계승됩니다.</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Right Info Box */}
-                <div className="glass-panel p-6 rounded-2xl border border-slate-800/80 flex flex-col gap-4">
-                  <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
-                    <Sparkles className="w-4 h-4" />
-                    업그레이드된 AI 엔진 사양
+                {/* Footer Bar: Engine Specs & Proceed Button */}
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-800/80">
+                  <div className="flex items-center flex-wrap gap-2 text-[11px] text-slate-400">
+                    <span className="flex items-center gap-1 bg-slate-900 px-2.5 py-1 rounded-md border border-slate-800">
+                      🎙️ Faster-Whisper Large-v3-Turbo
+                    </span>
+                    <span className="flex items-center gap-1 bg-slate-900 px-2.5 py-1 rounded-md border border-slate-800">
+                      🤖 Ollama Qwen2.5-14B 바이럴 채점
+                    </span>
                   </div>
 
-                  <div className="space-y-3 text-xs">
-                    <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
-                      <p className="font-semibold text-slate-200">🎙️ Faster-Whisper Large-v3-Turbo</p>
-                      <p className="text-slate-400 mt-1">밀리초 단위 단어 음성인식으로 정확도 극대화</p>
-                    </div>
-
-                    <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
-                      <p className="font-semibold text-slate-200">🤖 Ollama Qwen2.5-14B</p>
-                      <p className="text-slate-400 mt-1">
-                        더 정교한 문맥 파악과 OpusClip 기준 4기둥 바이럴 채점 (Hook, Flow, Value, Trend)
-                      </p>
-                    </div>
-
-                    <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
-                      <p className="font-semibold text-emerald-400">💰 100% 무료 로컬 처리</p>
-                      <p className="text-slate-400 mt-1">외부 유료 API 요금 0원, 데이터 유출 없이 Mac에서 전과정 처리</p>
-                    </div>
-                  </div>
+                  <button
+                    onClick={handleProceedToTemplate}
+                    className="w-full sm:w-auto px-7 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/25 transition"
+                  >
+                    다음 단계: 템플릿 선택
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             )}
@@ -1051,128 +1081,366 @@ export default function HappyShortsApp() {
                   )}
                 </div>
 
-                {/* Pro Studio Quality Bar (BGM, SFX, Color Grading, Dynamic Zoom, Smart Keywords) */}
-                <div className="glass-panel p-5 rounded-2xl border border-indigo-500/30 bg-slate-950/80 shadow-2xl flex flex-col gap-3.5">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-800/80">
+                {/* Pro Studio Quality Suite (3-Tab Segmented Controls) */}
+                <div className="glass-panel p-5 rounded-2xl border border-indigo-500/30 bg-slate-950/80 shadow-2xl flex flex-col gap-4">
+                  {/* Studio Header & Tab Switcher */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
                     <div className="flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-amber-400" />
-                      <span className="text-xs sm:text-sm font-bold text-slate-100">
-                        ✨ 프로 퀄리티 연출 패키지 (사운드 디자인 & 스튜디오 화질)
+                      <span className="text-sm font-bold text-slate-100">
+                        스튜디오 프로 연출 (사운드 & 화질 & 타이포)
                       </span>
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-semibold border border-indigo-500/30">
                         OpusClip/Submagic 급
                       </span>
                     </div>
-                    <span className="text-[11px] text-slate-400">
-                      사이드체인 오토 더킹 &bull; 바이럴 SFX &bull; 스튜디오 색감 &bull; 스마트 키워드
-                    </span>
-                  </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-1">
-                    {/* 1. BGM Track Selector */}
-                    <div className="flex flex-col gap-1.5 p-2.5 rounded-xl bg-slate-900/90 border border-slate-800">
-                      <span className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
-                        <Music className="w-3.5 h-3.5 text-indigo-400" /> BGM 배경음악:
-                      </span>
-                      <select
-                        value={bgmTrack}
-                        onChange={(e) => setBgmTrack(e.target.value)}
-                        className="bg-slate-950 border border-slate-700/80 rounded-lg text-xs font-medium text-slate-200 px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
-                      >
-                        <option value="auto">✨ 템플릿 맞춤 자동</option>
-                        <option value="lofi">☕ 로파이 팁스 (Study)</option>
-                        <option value="tech">⚡ 모던 테크 (Synth)</option>
-                        <option value="cinematic">🎬 시네마틱 (펄스)</option>
-                        <option value="none">🔇 BGM 끄기</option>
-                      </select>
-                    </div>
-
-                    {/* 2. SFX Sound Effects Toggle */}
-                    <div className="flex flex-col gap-1.5 p-2.5 rounded-xl bg-slate-900/90 border border-slate-800">
-                      <span className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
-                        <Volume2 className="w-3.5 h-3.5 text-amber-400" /> 효과음 (SFX):
-                      </span>
+                    {/* 3 Tabs */}
+                    <div className="flex items-center p-1 bg-slate-900 rounded-xl border border-slate-800 text-xs">
                       <button
                         type="button"
-                        onClick={() => setEnableSfx(!enableSfx)}
-                        className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${
-                          enableSfx
-                            ? "bg-amber-500/15 border-amber-500/50 text-amber-300 shadow-sm"
-                            : "bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300"
+                        onClick={() => setStudioOptionTab("audio")}
+                        className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
+                          studioOptionTab === "audio"
+                            ? "bg-indigo-600 text-white shadow-sm"
+                            : "text-slate-400 hover:text-slate-200"
                         }`}
                       >
-                        <span>{enableSfx ? "🔔 훅/전환/차임 켜짐" : "효과음 끄기"}</span>
-                        <div className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition ${enableSfx ? "bg-amber-500 justify-end" : "bg-slate-800 justify-start"}`}>
-                          <div className="bg-white w-2.5 h-2.5 rounded-full shadow" />
-                        </div>
+                        <Music className="w-3.5 h-3.5" />
+                        <span>오디오 연출</span>
                       </button>
-                    </div>
-
-                    {/* 3. Studio Color Grading */}
-                    <div className="flex flex-col gap-1.5 p-2.5 rounded-xl bg-slate-900/90 border border-slate-800">
-                      <span className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
-                        <Palette className="w-3.5 h-3.5 text-rose-400" /> 화질 & 색감 보정:
-                      </span>
-                      <select
-                        value={colorGrade}
-                        onChange={(e) => setColorGrade(e.target.value)}
-                        className="bg-slate-950 border border-slate-700/80 rounded-lg text-xs font-medium text-slate-200 px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
-                      >
-                        <option value="vibrant">🌈 스튜디오 비비드 (추천)</option>
-                        <option value="cinematic">🎞️ 시네마틱 필름</option>
-                        <option value="clean">✨ 클린 샤프닝</option>
-                        <option value="none">원본 색감 유지</option>
-                      </select>
-                    </div>
-
-                    {/* 4. Dynamic Punch-in Zoom */}
-                    <div className="flex flex-col gap-1.5 p-2.5 rounded-xl bg-slate-900/90 border border-slate-800">
-                      <span className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
-                        <ZoomIn className="w-3.5 h-3.5 text-cyan-400" /> 다이내믹 줌:
-                      </span>
                       <button
                         type="button"
-                        onClick={() => setDynamicZoom(!dynamicZoom)}
-                        className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${
-                          dynamicZoom
-                            ? "bg-cyan-500/15 border-cyan-500/50 text-cyan-300 shadow-sm"
-                            : "bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300"
+                        onClick={() => setStudioOptionTab("visual")}
+                        className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
+                          studioOptionTab === "visual"
+                            ? "bg-indigo-600 text-white shadow-sm"
+                            : "text-slate-400 hover:text-slate-200"
                         }`}
                       >
-                        <span>{dynamicZoom ? "🔍 1.10x 펀치인 줌" : "줌 효과 끄기"}</span>
-                        <div className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition ${dynamicZoom ? "bg-cyan-500 justify-end" : "bg-slate-800 justify-start"}`}>
-                          <div className="bg-white w-2.5 h-2.5 rounded-full shadow" />
-                        </div>
+                        <Palette className="w-3.5 h-3.5" />
+                        <span>비주얼 & 카메라</span>
                       </button>
-                    </div>
-
-                    {/* 5. Smart Keyword Subtitle Highlighting */}
-                    <div className="flex flex-col gap-1.5 p-2.5 rounded-xl bg-slate-900/90 border border-slate-800">
-                      <span className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-emerald-400" /> 스마트 키워드:
-                      </span>
                       <button
                         type="button"
-                        onClick={() => setSmartKeywords(!smartKeywords)}
-                        className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${
-                          smartKeywords
-                            ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-300 shadow-sm"
-                            : "bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300"
+                        onClick={() => setStudioOptionTab("typography")}
+                        className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
+                          studioOptionTab === "typography"
+                            ? "bg-indigo-600 text-white shadow-sm"
+                            : "text-slate-400 hover:text-slate-200"
                         }`}
                       >
-                        <span>{smartKeywords ? "🔤 숫자·핵심 네온강조" : "일반 자막"}</span>
-                        <div className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition ${smartKeywords ? "bg-emerald-500 justify-end" : "bg-slate-800 justify-start"}`}>
-                          <div className="bg-white w-2.5 h-2.5 rounded-full shadow" />
-                        </div>
+                        <Type className="w-3.5 h-3.5" />
+                        <span>타이포 & 모션</span>
                       </button>
                     </div>
                   </div>
+
+                  {/* Tab 1: Audio & Sound Design */}
+                  {studioOptionTab === "audio" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between gap-3">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                              <Music className="w-4 h-4 text-indigo-400" />
+                              BGM 배경음악 선곡
+                            </span>
+                            <span className="text-[11px] text-indigo-400 font-semibold">오토 더킹 내장</span>
+                          </div>
+                          <p className="text-[11px] text-slate-400">
+                            음성 발화 구간에서는 BGM 볼륨이 자동으로 낮아져 대사가 또렷하게 전달됩니다.
+                          </p>
+                        </div>
+                        <select
+                          value={bgmTrack}
+                          onChange={(e) => setBgmTrack(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-700/80 rounded-xl text-xs font-semibold text-slate-200 px-3 py-2.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                        >
+                          <option value="auto">✨ 템플릿 맞춤 자동 선곡 (추천)</option>
+                          <option value="lofi">☕ 로파이 팁스 (Study & Chill Beats)</option>
+                          <option value="tech">⚡ 모던 테크 (Synth & Electronic)</option>
+                          <option value="cinematic">🎬 시네마틱 (펄스 & 웅장한 사운드)</option>
+                          <option value="none">🔇 BGM 배경음악 끄기</option>
+                        </select>
+                      </div>
+
+                      <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between gap-3">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                              <Volume2 className="w-4 h-4 text-amber-400" />
+                              바이럴 사운드 효과음 (SFX)
+                            </span>
+                            <span className={`text-[11px] font-bold ${enableSfx ? "text-amber-400" : "text-slate-500"}`}>
+                              {enableSfx ? "켜짐" : "꺼짐"}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400">
+                            쇼츠 시작 훅(Whoosh), 장면 전환, 핵심 키워드 강조(차임·팝) 효과음을 자동 합성합니다.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setEnableSfx(!enableSfx)}
+                          className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-between ${
+                            enableSfx
+                              ? "bg-amber-500/15 border-amber-500/50 text-amber-300 shadow-sm"
+                              : "bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300"
+                          }`}
+                        >
+                          <span>{enableSfx ? "🔔 바이럴 SFX 효과음 활성화됨" : "효과음 끄기"}</span>
+                          <div className={`w-7 h-4 flex items-center rounded-full p-0.5 transition ${enableSfx ? "bg-amber-500 justify-end" : "bg-slate-800 justify-start"}`}>
+                            <div className="bg-white w-3 h-3 rounded-full shadow" />
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tab 2: Visual & Camera Polish */}
+                  {studioOptionTab === "visual" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between gap-3">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                              <Palette className="w-4 h-4 text-rose-400" />
+                              시네마틱 컬러 그레이딩 (LUT 보정)
+                            </span>
+                            <span className="text-[11px] text-rose-400 font-semibold">알고리즘 CTR</span>
+                          </div>
+                          <p className="text-[11px] text-slate-400">
+                            물빠진 원본 색감을 유튜브 피드에서 눈에 띄는 고채도·고명암비로 보정합니다.
+                          </p>
+                        </div>
+                        <select
+                          value={colorGrade}
+                          onChange={(e) => setColorGrade(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-700/80 rounded-xl text-xs font-semibold text-slate-200 px-3 py-2.5 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                        >
+                          <option value="vibrant_tech">⚡ 바이브런트 테크 (유튜브 추천 피드 CTR 극대화)</option>
+                          <option value="warm_clean">☀️ 웜 클린 스튜디오 (따뜻하고 포근한 인물톤)</option>
+                          <option value="film_contrast">🎬 시네마틱 필름 (영화 같은 깊은 대비)</option>
+                          <option value="clean">✨ 클린 샤프닝 (선명도 및 윤곽 강화)</option>
+                          <option value="none">원본 영상 색감 그대로 유지</option>
+                        </select>
+                      </div>
+
+                      <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between gap-3">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                              <ZoomIn className="w-4 h-4 text-cyan-400" />
+                              다이내믹 펀치인 줌 (Punch-in Zoom)
+                            </span>
+                            <span className={`text-[11px] font-bold ${dynamicZoom ? "text-cyan-400" : "text-slate-500"}`}>
+                              {dynamicZoom ? "1.10x 줌 켜짐" : "꺼짐"}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-400">
+                            강조 문장에서 카메라를 미세하게 줌인(1.10x)하여 시청 지속 시간을 극대화합니다.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setDynamicZoom(!dynamicZoom)}
+                          className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-between ${
+                            dynamicZoom
+                              ? "bg-cyan-500/15 border-cyan-500/50 text-cyan-300 shadow-sm"
+                              : "bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300"
+                          }`}
+                        >
+                          <span>{dynamicZoom ? "🔍 1.10x 다이내믹 줌 활성화됨" : "줌 효과 끄기"}</span>
+                          <div className={`w-7 h-4 flex items-center rounded-full p-0.5 transition ${dynamicZoom ? "bg-cyan-500 justify-end" : "bg-slate-800 justify-start"}`}>
+                            <div className="bg-white w-3 h-3 rounded-full shadow" />
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tab 3: Typography & Motion Animation */}
+                  {studioOptionTab === "typography" && (
+                    <div className="flex flex-col gap-3">
+                      {/* Subtitle Style Selector */}
+                      <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                            <Type className="w-4 h-4 text-indigo-400" />
+                            자막 출력 스타일
+                          </span>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            영상 분위기에 어울리는 폰트 및 애니메이션 프리셋을 선택하세요.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+                          {[
+                            { id: "viral_pop", label: "🔥 키네틱 팝 자막" },
+                            { id: "clean_minimal", label: "💬 클린 미니멀" },
+                            { id: "none", label: "🚫 자막 없음" },
+                          ].map((s) => (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onClick={() => setSubtitleStyle(s.id)}
+                              className={`px-3 py-1.5 rounded-lg font-semibold transition ${
+                                subtitleStyle === s.id
+                                  ? "bg-indigo-600 text-white shadow"
+                                  : "text-slate-400 hover:text-slate-200"
+                              }`}
+                            >
+                              {s.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 5 Pro Typography Toggles Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {/* 1. Smart Keywords */}
+                        <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between gap-2">
+                          <div>
+                            <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                              스마트 키워드 네온 강조
+                            </span>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              숫자, 핵심 단어, 파워 키워드 자동 컬러링
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSmartKeywords(!smartKeywords)}
+                            className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${
+                              smartKeywords
+                                ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-300"
+                                : "bg-slate-950 border-slate-800 text-slate-500"
+                            }`}
+                          >
+                            <span>{smartKeywords ? "🔤 네온 하이라이트" : "일반 단일색"}</span>
+                            <div className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition ${smartKeywords ? "bg-emerald-500 justify-end" : "bg-slate-800 justify-start"}`}>
+                              <div className="bg-white w-2.5 h-2.5 rounded-full shadow" />
+                            </div>
+                          </button>
+                        </div>
+
+                        {/* 2. Elastic Bounce */}
+                        <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between gap-2">
+                          <div>
+                            <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-fuchsia-400" />
+                              탄성 바운스 자막
+                            </span>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              0.8x→1.15x 물리 기반 스프링 탄성 팝업
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setBounceAnimation(!bounceAnimation)}
+                            className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${
+                              bounceAnimation
+                                ? "bg-fuchsia-500/15 border-fuchsia-500/50 text-fuchsia-300"
+                                : "bg-slate-950 border-slate-800 text-slate-500"
+                            }`}
+                          >
+                            <span>{bounceAnimation ? "🌀 탄성 바운스 켜짐" : "정적 팝업"}</span>
+                            <div className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition ${bounceAnimation ? "bg-fuchsia-500 justify-end" : "bg-slate-800 justify-start"}`}>
+                              <div className="bg-white w-2.5 h-2.5 rounded-full shadow" />
+                            </div>
+                          </button>
+                        </div>
+
+                        {/* 3. Stat Card */}
+                        <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between gap-2">
+                          <div>
+                            <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                              <Target className="w-3.5 h-3.5 text-amber-400" />
+                              키노트 수치 요약 카드
+                            </span>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              통계, 퍼센트, 지표 글래스모피즘 팝업
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setEnableStatPill(!enableStatPill)}
+                            className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${
+                              enableStatPill
+                                ? "bg-amber-500/15 border-amber-500/50 text-amber-300"
+                                : "bg-slate-950 border-slate-800 text-slate-500"
+                            }`}
+                          >
+                            <span>{enableStatPill ? "📊 수치 요약 카드" : "카드 끄기"}</span>
+                            <div className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition ${enableStatPill ? "bg-amber-500 justify-end" : "bg-slate-800 justify-start"}`}>
+                              <div className="bg-white w-2.5 h-2.5 rounded-full shadow" />
+                            </div>
+                          </button>
+                        </div>
+
+                        {/* 4. Seamless Loop */}
+                        <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between gap-2">
+                          <div>
+                            <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                              <Infinity className="w-3.5 h-3.5 text-violet-400" />
+                              무한 루프 싱크
+                            </span>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              끝과 처음을 200ms 페이드로 매끄럽게 연결
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSeamlessLoop(!seamlessLoop)}
+                            className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${
+                              seamlessLoop
+                                ? "bg-violet-500/15 border-violet-500/50 text-violet-300"
+                                : "bg-slate-950 border-slate-800 text-slate-500"
+                            }`}
+                          >
+                            <span>{seamlessLoop ? "🔁 무한 루프 싱크" : "일반 컷"}</span>
+                            <div className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition ${seamlessLoop ? "bg-violet-500 justify-end" : "bg-slate-800 justify-start"}`}>
+                              <div className="bg-white w-2.5 h-2.5 rounded-full shadow" />
+                            </div>
+                          </button>
+                        </div>
+
+                        {/* 5. 3-Sec Hook Badge */}
+                        <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between gap-2">
+                          <div>
+                            <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                              3초 훅 뱃지 타이틀
+                            </span>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              영상 상단에 호기심 유발 헤드라인 표시
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowBadge(!showBadge)}
+                            className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${
+                              showBadge
+                                ? "bg-indigo-500/15 border-indigo-500/50 text-indigo-300"
+                                : "bg-slate-950 border-slate-800 text-slate-500"
+                            }`}
+                          >
+                            <span>{showBadge ? "🏷️ 3초 훅 뱃지 켜짐" : "뱃지 숨김"}</span>
+                            <div className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition ${showBadge ? "bg-indigo-500 justify-end" : "bg-slate-800 justify-start"}`}>
+                              <div className="bg-white w-2.5 h-2.5 rounded-full shadow" />
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* Bottom Sticky Action & Fine-Tuning Panel */}
-                <div className="glass-panel p-5 rounded-2xl border border-slate-800/80 shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-6 sticky bottom-4 z-40 bg-slate-950/90 backdrop-blur-xl">
+                {/* Bottom Sticky Action Bar (Clean & Focused) */}
+                <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-slate-800/80 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-4 sticky bottom-4 z-40 bg-slate-950/95 backdrop-blur-xl">
                   {/* Left: Currently Selected Template Pill */}
-                  <div className="flex items-center gap-3 w-full lg:w-auto">
+                  <div className="flex items-center gap-3 w-full sm:w-auto">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center font-bold text-white shadow-md shadow-indigo-600/30 flex-shrink-0">
                       ✓
                     </div>
@@ -1191,116 +1459,29 @@ export default function HappyShortsApp() {
                     </div>
                   </div>
 
-                  {/* Center: Subtitle Style & Badge Toggle */}
-                  <div className="flex items-center flex-wrap gap-4 w-full lg:w-auto justify-start lg:justify-center">
-                    <div className="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-xs">
-                      {[
-                        { id: "viral_pop", label: "🔥 키네틱 팝 자막" },
-                        { id: "clean_minimal", label: "💬 클린 미니멀" },
-                        { id: "none", label: "🚫 자막 없음" },
-                      ].map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => setSubtitleStyle(s.id)}
-                          className={`px-3 py-1.5 rounded-lg font-semibold transition ${
-                            subtitleStyle === s.id
-                              ? "bg-indigo-600 text-white shadow"
-                              : "text-slate-400 hover:text-slate-200"
-                          }`}
-                        >
-                          {s.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="flex items-center gap-2 text-xs text-slate-300 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-slate-800">
-                      <span>3초 훅 뱃지:</span>
-                      <button
-                        type="button"
-                        onClick={() => setShowBadge(!showBadge)}
-                        className={`w-9 h-5 flex items-center rounded-full p-0.5 transition duration-300 ${
-                          showBadge ? "bg-indigo-600 justify-end" : "bg-slate-800 justify-start"
-                        }`}
-                      >
-                        <div className="bg-white w-3.5 h-3.5 rounded-full shadow-md" />
-                      </button>
-                    </div>
-
-                    {/* Aspect Ratio Pill */}
-                    <div className="flex items-center gap-1 text-xs text-slate-300 bg-slate-900/90 p-1 rounded-xl border border-slate-800">
-                      <button
-                        type="button"
-                        onClick={() => setAspectRatio("9:16")}
-                        className={`px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 ${
-                          aspectRatio === "9:16"
-                            ? "bg-indigo-600 text-white shadow-sm"
-                            : "text-slate-400 hover:text-slate-200"
-                        }`}
-                      >
-                        <span>📱 9:16 세로 (쇼츠 템플릿)</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setAspectRatio("16:9")}
-                        className={`px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 ${
-                          aspectRatio === "16:9"
-                            ? "bg-indigo-600 text-white shadow-sm"
-                            : "text-slate-400 hover:text-slate-200"
-                        }`}
-                      >
-                        <span>🖥️ 16:9 가로 (와이드)</span>
-                      </button>
-                    </div>
-
-                    {/* Subtitle Removal Toggle */}
-                    <button
-                      type="button"
-                      onClick={() => setRemoveSubtitles(!removeSubtitles)}
-                      title="원본 자막 삭제 (ai 처리라서 일부 뭉개짐이 있을 수 있음)"
-                      className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-xl border transition ${
-                        removeSubtitles
-                          ? "bg-amber-500/15 border-amber-500/50 text-amber-300 font-semibold"
-                          : "bg-slate-900/90 border-slate-800 text-slate-400 hover:text-slate-200"
-                      }`}
-                    >
-                      <span>원본 자막 삭제</span>
-                      <div
-                        className={`w-7 h-4 flex items-center rounded-full p-0.5 transition duration-300 ${
-                          removeSubtitles ? "bg-amber-500 justify-end" : "bg-slate-800 justify-start"
-                        }`}
-                      >
-                        <div className="bg-white w-3 h-3 rounded-full shadow-md" />
-                      </div>
-                    </button>
-
-                    {/* Filler Word Removal Toggle */}
-                    <button
-                      type="button"
-                      onClick={() => setFilterFillers(!filterFillers)}
-                      title="추임새/말버릇 제거 (어, 음, 네, 아 등의 단독 팝업 방지)"
-                      className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-xl border transition ${
-                        filterFillers
-                          ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-300 font-semibold"
-                          : "bg-slate-900/90 border-slate-800 text-slate-400 hover:text-slate-200"
-                      }`}
-                    >
-                      <span>말버릇/추임새 정리</span>
-                      <div
-                        className={`w-7 h-4 flex items-center rounded-full p-0.5 transition duration-300 ${
-                          filterFillers ? "bg-emerald-500 justify-end" : "bg-slate-800 justify-start"
-                        }`}
-                      >
-                        <div className="bg-white w-3 h-3 rounded-full shadow-md" />
-                      </div>
-                    </button>
+                  {/* Center: Clean Applied Specs Chips */}
+                  <div className="hidden md:flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 font-semibold text-slate-300">
+                      {aspectRatio === "9:16" ? "📱 9:16 세로" : "🖥️ 16:9 가로"}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800">
+                      {subtitleStyle === "viral_pop" ? "🔥 키네틱" : subtitleStyle === "clean_minimal" ? "💬 미니멀" : "🚫 자막없음"}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800">
+                      {colorGrade === "vibrant_tech" ? "⚡ 바이브런트" : "🎨 색감보정"}
+                    </span>
+                    {enableSfx && (
+                      <span className="px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-300 font-semibold">
+                        🔔 SFX
+                      </span>
+                    )}
                   </div>
 
-                  {/* Right: Proceed Button */}
-                  <div className="w-full lg:w-auto flex justify-end">
+                  {/* Right: Proceed to Step 3 Button */}
+                  <div className="w-full sm:w-auto flex justify-end">
                     <button
                       onClick={handleStartAnalysis}
-                      className="w-full lg:w-auto px-7 py-3 rounded-xl bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-600 hover:opacity-95 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-xl shadow-rose-500/20 transition"
+                      className="w-full sm:w-auto px-7 py-3 rounded-xl bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-600 hover:opacity-95 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-xl shadow-rose-500/20 transition"
                     >
                       <Sparkles className="w-4 h-4" />
                       AI 하이라이트 분석 시작
@@ -1607,6 +1788,26 @@ export default function HappyShortsApp() {
                                     {hl.virality_score}점
                                   </span>
 
+                                  {/* Seamless Infinite Loop Score Badge */}
+                                  <span
+                                    className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 font-mono"
+                                    title="끝 문장과 첫 문장이 자연스럽게 연결되어 무한 반복 시청을 유도하는 싱크 지수입니다."
+                                  >
+                                    <Infinity className="w-3.5 h-3.5 stroke-[2.5]" />
+                                    루프 {hl.loop_score || 88}점
+                                  </span>
+
+                                  {/* Apple Keynote Stat Pill Detected Badge */}
+                                  {hl.stat_pill && (
+                                    <span
+                                      className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-violet-500/20 text-violet-300 border border-violet-500/40 flex items-center gap-1 font-mono"
+                                      title={`영상 3.8초경 [${hl.stat_pill.metric}] 키노트 글래스모피즘 수치 카드가 자동 팝업됩니다.`}
+                                    >
+                                      <Target className="w-3.5 h-3.5" />
+                                      카드 [{hl.stat_pill.metric}]
+                                    </span>
+                                  )}
+
                                   {isSelected && (
                                     <span className="text-[10px] px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 flex items-center gap-1 font-semibold">
                                       <Play className="w-2.5 h-2.5 fill-current" />
@@ -1634,10 +1835,109 @@ export default function HappyShortsApp() {
                                 </div>
                               </div>
 
-                              <h3 className="font-bold text-sm text-white mt-1 mb-1">{hl.title}</h3>
-                              <p className="text-xs text-amber-300 font-medium bg-amber-500/10 px-2 py-1 rounded-md inline-block mb-3">
-                                💬 &quot;{hl.hook_text}&quot;
-                              </p>
+                              <h3 className="font-bold text-sm text-white mt-1 mb-1.5">{hl.title}</h3>
+
+                              {/* Hook Headline A/B Testing Variant Selector */}
+                              <div className="space-y-2 mb-3">
+                                {/* Currently Active Hook Headline Display */}
+                                <div className="p-2.5 rounded-xl bg-gradient-to-r from-amber-500/10 via-rose-500/10 to-indigo-500/10 border border-amber-500/30 flex items-start gap-2 shadow-sm">
+                                  <span className="text-sm shrink-0">🎯</span>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between text-[10px] font-semibold text-amber-300/80 mb-0.5">
+                                      <span>적용된 훅 헤드라인</span>
+                                      <span className="font-mono text-indigo-300">
+                                        {selectedHookVariants[hl.id] === "curiosity"
+                                          ? "🤔 호기심형"
+                                          : selectedHookVariants[hl.id] === "urgency"
+                                          ? "⚠️ 손실회피형"
+                                          : selectedHookVariants[hl.id] === "benefit"
+                                          ? "🚀 극대이득형"
+                                          : "✨ 기본형"}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-amber-200 font-bold leading-snug">
+                                      &quot;{
+                                        (selectedHookVariants[hl.id] &&
+                                          hl.hook_variants &&
+                                          (hl.hook_variants as Record<string, string | undefined>)[selectedHookVariants[hl.id]]) ||
+                                        hl.hook_text
+                                      }&quot;
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {/* Hook A/B Testing 3-Variant Switcher Buttons */}
+                                {hl.hook_variants && (
+                                  <div
+                                    className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 pt-0.5"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {[
+                                      {
+                                        key: "curiosity",
+                                        label: "🤔 호기심형",
+                                        text: hl.hook_variants.curiosity,
+                                        desc: "궁금증 유발",
+                                      },
+                                      {
+                                        key: "urgency",
+                                        label: "⚠️ 손실회피형",
+                                        text: hl.hook_variants.urgency,
+                                        desc: "놓치면 손해",
+                                      },
+                                      {
+                                        key: "benefit",
+                                        label: "🚀 극대이득형",
+                                        text: hl.hook_variants.benefit,
+                                        desc: "즉각적 결과",
+                                      },
+                                    ].map((v) => {
+                                      const isCurrent =
+                                        (selectedHookVariants[hl.id] || "default") === v.key;
+                                      if (!v.text) return null;
+                                      return (
+                                        <button
+                                          key={v.key}
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedHookVariants((prev) => ({
+                                              ...prev,
+                                              [hl.id]: v.key,
+                                            }));
+                                            if (selectedHighlight?.id === hl.id) {
+                                              setSelectedHighlight({
+                                                ...selectedHighlight,
+                                                hook_text: v.text || hl.hook_text,
+                                              });
+                                            }
+                                          }}
+                                          className={`p-2 rounded-xl text-left border transition flex flex-col justify-between gap-1 ${
+                                            isCurrent
+                                              ? "bg-slate-900 border-indigo-500 shadow-md ring-1 ring-indigo-500/60"
+                                              : "bg-slate-950/60 border-slate-800/80 hover:bg-slate-900/80 hover:border-slate-700"
+                                          }`}
+                                        >
+                                          <div className="flex items-center justify-between w-full">
+                                            <span
+                                              className={`text-[10px] font-bold ${
+                                                isCurrent ? "text-indigo-300" : "text-slate-400"
+                                              }`}
+                                            >
+                                              {v.label}
+                                            </span>
+                                            {isCurrent && (
+                                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+                                            )}
+                                          </div>
+                                          <span className="text-[11px] text-slate-300 font-medium line-clamp-1 truncate">
+                                            {v.text}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
 
                               {/* Summary takeaway points */}
                               {hl.summary_points && hl.summary_points.length > 0 && (
@@ -1652,11 +1952,19 @@ export default function HappyShortsApp() {
                               )}
 
                               {/* Score Breakdown Pills */}
-                              <div className="flex items-center gap-2 pt-2 border-t border-slate-800 text-[10px] text-slate-500 font-mono">
-                                <span>후킹: {b.hook}/30</span>
-                                <span>흐름: {b.flow}/25</span>
-                                <span>가치: {b.value}/25</span>
-                                <span>트렌드: {b.trend}/20</span>
+                              <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-[10px] text-slate-500 font-mono">
+                                <div className="flex items-center gap-2">
+                                  <span>후킹: {b.hook}/30</span>
+                                  <span>흐름: {b.flow}/25</span>
+                                  <span>가치: {b.value}/25</span>
+                                  <span>트렌드: {b.trend}/20</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-emerald-400/90 font-semibold">🔁 루프 싱크: {hl.loop_score || 88}점</span>
+                                  {hl.stat_pill && (
+                                    <span className="text-violet-400/90 font-semibold">📊 카드: {hl.stat_pill.metric}</span>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           );
@@ -1667,10 +1975,38 @@ export default function HappyShortsApp() {
                     {/* Right: Interactive Video Player & Trim Controller */}
                     <div className="lg:col-span-5 flex flex-col gap-4">
                       <div className="glass-panel p-5 rounded-2xl border border-slate-800/80 flex flex-col gap-4 sticky top-24">
-                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                          <Play className="w-4 h-4 text-indigo-400" />
-                          선택 구간 미리보기 & 타임라인 트림
-                        </h3>
+                        <div className="flex items-center justify-between pb-1 border-b border-slate-800/80">
+                          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                            <Play className="w-4 h-4 text-indigo-400" />
+                            선택 구간 미리보기 & 타임라인 트림
+                          </h3>
+
+                          {/* Safe Zone Guideline Selector */}
+                          <div className="flex items-center gap-1 bg-slate-900/90 border border-slate-800 p-0.5 rounded-lg text-[10px]">
+                            <span className="text-slate-500 font-mono px-1 flex items-center gap-0.5">
+                              <Smartphone className="w-2.5 h-2.5" /> 세이프존:
+                            </span>
+                            {[
+                              { id: "none", label: "끄기" },
+                              { id: "youtube", label: "쇼츠" },
+                              { id: "reels", label: "릴스" },
+                              { id: "tiktok", label: "틱톡" },
+                            ].map((sz) => (
+                              <button
+                                key={sz.id}
+                                type="button"
+                                onClick={() => setPreviewSafeZoneMode(sz.id as SafeZonePlatform)}
+                                className={`px-1.5 py-0.5 rounded font-bold transition ${
+                                  previewSafeZoneMode === sz.id
+                                    ? "bg-indigo-600 text-white shadow-sm"
+                                    : "text-slate-400 hover:text-slate-200"
+                                }`}
+                              >
+                                {sz.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
 
                         {effectiveStreamUrl ? (
                           <div className="space-y-2">
@@ -1691,6 +2027,7 @@ export default function HappyShortsApp() {
                                 onPlay={() => setIsPreviewPlaying(true)}
                                 onPause={() => setIsPreviewPlaying(false)}
                               />
+                              <SafeZoneOverlay platform={previewSafeZoneMode} />
                             </div>
                             <div className="flex items-center justify-between text-xs bg-slate-950/60 px-3 py-2 rounded-xl border border-slate-800">
                               <span className="text-slate-400 text-[11px]">
@@ -1772,140 +2109,85 @@ export default function HappyShortsApp() {
                               </div>
                             </div>
 
-                            {/* Output Settings Summary & Toggles */}
-                            <div className="flex flex-col gap-2 p-3 rounded-xl bg-slate-950/70 border border-slate-800 text-xs">
+                            {/* Applied Studio Settings Summary Card */}
+                            <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 text-xs flex flex-col gap-2.5">
                               <div className="flex items-center justify-between">
-                                <span className="text-slate-400 font-semibold">출력 화면 비율:</span>
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => setAspectRatio("9:16")}
-                                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition ${
-                                      aspectRatio === "9:16"
-                                        ? "bg-indigo-600 text-white shadow-sm"
-                                        : "bg-slate-900 text-slate-400 hover:text-slate-200"
-                                    }`}
-                                  >
-                                    📱 9:16 세로 (쇼츠 템플릿)
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setAspectRatio("16:9")}
-                                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition ${
-                                      aspectRatio === "16:9"
-                                        ? "bg-indigo-600 text-white shadow-sm"
-                                        : "bg-slate-900 text-slate-400 hover:text-slate-200"
-                                    }`}
-                                  >
-                                    🖥️ 16:9 가로 (와이드)
-                                  </button>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center justify-between pt-2 border-t border-slate-800/60">
-                                <span className="text-slate-400 font-semibold">원본 자막 처리:</span>
-                                <button
-                                  type="button"
-                                  onClick={() => setRemoveSubtitles(!removeSubtitles)}
-                                  className={`px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1.5 ${
-                                    removeSubtitles
-                                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
-                                      : "bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200"
-                                  }`}
-                                >
-                                  <span>{removeSubtitles ? "🧹 AI 자막 삭제 적용 중" : "✨ 원본 자막 유지"}</span>
-                                </button>
-                              </div>
-
-                              <div className="flex items-center justify-between pt-2 border-t border-slate-800/60">
-                                <span className="text-slate-400 font-semibold">말버릇 자막 정리:</span>
-                                <button
-                                  type="button"
-                                  onClick={() => setFilterFillers(!filterFillers)}
-                                  className={`px-2 py-0.5 rounded text-[11px] font-bold transition flex items-center gap-1.5 ${
-                                    filterFillers
-                                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                                      : "bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200"
-                                  }`}
-                                >
-                                  <span>{filterFillers ? "✨ 말버릇(네/어/음) 정리 켜짐" : "모든 단어 표시"}</span>
-                                </button>
-                              </div>
-
-                              {/* BGM Track */}
-                              <div className="flex items-center justify-between pt-2 border-t border-slate-800/60">
-                                <span className="text-slate-400 font-semibold flex items-center gap-1">
-                                  <Music className="w-3 h-3 text-indigo-400" /> BGM 오토더킹:
+                                <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                                  적용된 템플릿 & 스튜디오 사양
                                 </span>
-                                <select
-                                  value={bgmTrack}
-                                  onChange={(e) => setBgmTrack(e.target.value)}
-                                  className="bg-slate-900 border border-slate-700 rounded text-[11px] font-semibold text-slate-200 px-2 py-0.5"
-                                >
-                                  <option value="auto">✨ 템플릿 맞춤</option>
-                                  <option value="lofi">☕ 로파이 팁스</option>
-                                  <option value="tech">⚡ 모던 테크</option>
-                                  <option value="cinematic">🎬 시네마틱</option>
-                                  <option value="none">🔇 BGM 끔</option>
-                                </select>
+                                <span className="text-[10px] text-slate-500 font-mono">
+                                  {templates.find((t) => t.id === selectedTemplateId)?.name}
+                                </span>
                               </div>
 
-                              {/* SFX & Dynamic Zoom */}
-                              <div className="grid grid-cols-2 gap-1.5 pt-2 border-t border-slate-800/60">
-                                <button
-                                  type="button"
-                                  onClick={() => setEnableSfx(!enableSfx)}
-                                  className={`px-2 py-1 rounded text-[11px] font-semibold transition flex items-center justify-between border ${
-                                    enableSfx
-                                      ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
-                                      : "bg-slate-900 border-slate-800 text-slate-500"
-                                  }`}
-                                >
-                                  <span>🔔 효과음 (SFX)</span>
-                                  <span className="font-bold">{enableSfx ? "ON" : "OFF"}</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setDynamicZoom(!dynamicZoom)}
-                                  className={`px-2 py-1 rounded text-[11px] font-semibold transition flex items-center justify-between border ${
-                                    dynamicZoom
-                                      ? "bg-cyan-500/15 border-cyan-500/40 text-cyan-300"
-                                      : "bg-slate-900 border-slate-800 text-slate-500"
-                                  }`}
-                                >
-                                  <span>🔍 펀치인 줌</span>
-                                  <span className="font-bold">{dynamicZoom ? "ON" : "OFF"}</span>
-                                </button>
+                              <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-800/80">
+                                <span className="px-2 py-0.5 rounded-md bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-bold text-[10px]">
+                                  {aspectRatio === "9:16" ? "📱 9:16 세로" : "🖥️ 16:9 가로"}
+                                </span>
+                                {removeSubtitles ? (
+                                  <span className="px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 font-semibold text-[10px]">
+                                    🧹 LaMa 인페인팅
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-400 text-[10px]">
+                                    원본 자막
+                                  </span>
+                                )}
+                                {filterFillers && (
+                                  <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px]">
+                                    ✨ 말버릇 필터
+                                  </span>
+                                )}
+                                <span className="px-2 py-0.5 rounded-md bg-rose-500/15 border border-rose-500/30 text-rose-300 text-[10px]">
+                                  {colorGrade === "vibrant_tech"
+                                    ? "⚡ 바이브런트 테크"
+                                    : colorGrade === "warm_clean"
+                                    ? "☀️ 웜 클린"
+                                    : colorGrade === "film_contrast"
+                                    ? "🎬 시네마틱 필름"
+                                    : colorGrade === "clean"
+                                    ? "✨ 클린 샤픈"
+                                    : "원본 색감"}
+                                </span>
+                                <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300 text-[10px]">
+                                  🎵 BGM: {bgmTrack === "auto" ? "템플릿 자동" : bgmTrack === "none" ? "끄기" : bgmTrack}
+                                </span>
+                                {enableSfx && (
+                                  <span className="px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[10px]">
+                                    🔔 SFX ON
+                                  </span>
+                                )}
+                                {dynamicZoom && (
+                                  <span className="px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-[10px]">
+                                    🔍 줌 1.10x
+                                  </span>
+                                )}
+                                {smartKeywords && (
+                                  <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-[10px]">
+                                    🔤 네온 키워드
+                                  </span>
+                                )}
+                                {bounceAnimation && (
+                                  <span className="px-2 py-0.5 rounded-md bg-fuchsia-500/10 border border-fuchsia-500/20 text-fuchsia-300 text-[10px]">
+                                    🌀 탄성 바운스
+                                  </span>
+                                )}
+                                {enableStatPill && (
+                                  <span className="px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[10px]">
+                                    📊 키노트 카드
+                                  </span>
+                                )}
+                                {seamlessLoop && (
+                                  <span className="px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[10px]">
+                                    🔁 무한 루프
+                                  </span>
+                                )}
                               </div>
 
-                              {/* Color Grade & Smart Keywords */}
-                              <div className="grid grid-cols-2 gap-1.5 pt-1.5">
-                                <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5">
-                                  <Palette className="w-3 h-3 text-rose-400 flex-shrink-0" />
-                                  <select
-                                    value={colorGrade}
-                                    onChange={(e) => setColorGrade(e.target.value)}
-                                    className="bg-transparent text-[11px] font-semibold text-slate-200 w-full focus:outline-none"
-                                  >
-                                    <option value="vibrant" className="bg-slate-900">비비드 색감</option>
-                                    <option value="cinematic" className="bg-slate-900">시네마틱</option>
-                                    <option value="clean" className="bg-slate-900">클린 샤픈</option>
-                                    <option value="none" className="bg-slate-900">원본 색감</option>
-                                  </select>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => setSmartKeywords(!smartKeywords)}
-                                  className={`px-2 py-1 rounded text-[11px] font-semibold transition flex items-center justify-between border ${
-                                    smartKeywords
-                                      ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
-                                      : "bg-slate-900 border-slate-800 text-slate-500"
-                                  }`}
-                                >
-                                  <span>🔤 키워드 강조</span>
-                                  <span className="font-bold">{smartKeywords ? "ON" : "OFF"}</span>
-                                </button>
-                              </div>
+                              <p className="text-[10px] text-slate-500 pt-1">
+                                💡 디자인이나 사운드 설정을 바꾸려면 상단 스텝 1 또는 2를 클릭하세요.
+                              </p>
                             </div>
 
                             <div className="flex flex-col gap-2 pt-1">
@@ -2161,6 +2443,36 @@ export default function HappyShortsApp() {
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                     {/* Left: Video Player */}
                     <div className="lg:col-span-5 flex flex-col items-center justify-center">
+                      {/* Mobile Safe Zone Guideline Selector Bar */}
+                      {aspectRatio === "9:16" && (
+                        <div className="flex items-center gap-2 mb-3 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl shadow-lg">
+                          <span className="text-xs font-bold text-slate-300 flex items-center gap-1">
+                            <Smartphone className="w-3.5 h-3.5 text-indigo-400" /> 세이프존 검증:
+                          </span>
+                          <div className="flex items-center gap-1">
+                            {[
+                              { id: "none", label: "끄기" },
+                              { id: "youtube", label: "유튜브 쇼츠" },
+                              { id: "reels", label: "릴스" },
+                              { id: "tiktok", label: "틱톡" },
+                            ].map((sz) => (
+                              <button
+                                key={sz.id}
+                                type="button"
+                                onClick={() => setSafeZoneMode(sz.id as SafeZonePlatform)}
+                                className={`px-2 py-0.5 rounded text-[11px] font-bold transition ${
+                                  safeZoneMode === sz.id
+                                    ? "bg-indigo-600 text-white shadow"
+                                    : "text-slate-400 hover:text-slate-200"
+                                }`}
+                              >
+                                {sz.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       <div className={`w-full ${aspectRatio === "16:9" ? "max-w-[560px] rounded-[28px]" : "max-w-[340px] rounded-[36px]"} bg-slate-950 p-3 border-4 border-slate-800 shadow-2xl shadow-indigo-500/10`}>
                         {/* Notch for 9:16 mobile shorts */}
                         {aspectRatio === "9:16" && (
@@ -2174,6 +2486,9 @@ export default function HappyShortsApp() {
                             loop
                             className="w-full h-full object-contain"
                           />
+                          {aspectRatio === "9:16" && (
+                            <SafeZoneOverlay platform={safeZoneMode} />
+                          )}
                         </div>
                       </div>
 
@@ -2739,6 +3054,34 @@ export default function HappyShortsApp() {
                               바이럴 {previewModalOutput.virality_score}점
                             </span>
                           )}
+
+                          {/* Safe Zone Toggle in Gallery Modal */}
+                          {previewModalOutput.aspect_ratio !== "16:9" && (
+                            <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 p-0.5 rounded-lg text-[10px]">
+                              <span className="text-slate-500 font-mono px-1 flex items-center gap-0.5">
+                                <Smartphone className="w-2.5 h-2.5" /> 세이프존:
+                              </span>
+                              {[
+                                { id: "none", label: "끄기" },
+                                { id: "youtube", label: "쇼츠" },
+                                { id: "reels", label: "릴스" },
+                                { id: "tiktok", label: "틱톡" },
+                              ].map((sz) => (
+                                <button
+                                  key={sz.id}
+                                  type="button"
+                                  onClick={() => setSafeZoneMode(sz.id as SafeZonePlatform)}
+                                  className={`px-1.5 py-0.5 rounded font-bold transition ${
+                                    safeZoneMode === sz.id
+                                      ? "bg-indigo-600 text-white shadow-sm"
+                                      : "text-slate-400 hover:text-slate-200"
+                                  }`}
+                                >
+                                  {sz.label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                         <h3 className="text-base font-bold text-white truncate mt-1">
                           {previewModalOutput.title || previewModalOutput.filename}
@@ -2756,13 +3099,16 @@ export default function HappyShortsApp() {
                     {/* Modal Body: Split Video Player + SEO Details */}
                     <div className="flex flex-col md:flex-row gap-6 overflow-y-auto pr-1">
                       {/* Video Player */}
-                      <div className="w-full md:w-[320px] shrink-0 flex items-center justify-center bg-black/90 rounded-2xl overflow-hidden border border-slate-800 shadow-xl">
+                      <div className="w-full md:w-[320px] shrink-0 flex items-center justify-center bg-black/90 rounded-2xl overflow-hidden border border-slate-800 shadow-xl relative">
                         <video
                           src={previewModalOutput.stream_url}
                           controls
                           autoPlay
                           className="w-full max-h-[60vh] object-contain"
                         />
+                        {previewModalOutput.aspect_ratio !== "16:9" && (
+                          <SafeZoneOverlay platform={safeZoneMode} />
+                        )}
                       </div>
 
                       {/* SEO Guide & Download Pane */}

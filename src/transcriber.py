@@ -60,59 +60,63 @@ def transcribe_video(
         callback(32, "고음질 16kHz 모노 오디오 트랙 추출 중...")
     wav_path = str(TEMP_DIR / f"{cache_key}.wav")
     extract_audio(video_path, wav_path)
-    
-    # Load faster-whisper model
-    if callback:
-        callback(36, f"Faster-Whisper ({model_size}) 음성 모델 로드 중...")
-    model = WhisperModel(model_size, device=device, compute_type=compute_type)
-    
-    if callback:
-        callback(40, "단어 단위 정밀 타임스탬프 추출 시작...")
 
-    segments_generator, info = model.transcribe(
-        wav_path,
-        beam_size=5,
-        word_timestamps=True,
-        language="ko"  # default to Korean, faster-whisper will detect if different
-    )
-    
-    total_audio_sec = max(1.0, float(info.duration or 1.0))
-    segments_list = []
-    seg_idx = 0
-    last_pct = 40
+    try:
+        # Load faster-whisper model
+        if callback:
+            callback(36, f"Faster-Whisper ({model_size}) 음성 모델 로드 중...")
+        model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        
+        if callback:
+            callback(40, "단어 단위 정밀 타임스탬프 추출 시작...")
 
-    for seg in segments_generator:
-        words = []
-        if seg.words:
-            for w in seg.words:
-                words.append(Word(
-                    word=w.word.strip(),
-                    start=round(w.start, 2),
-                    end=round(w.end, 2),
-                    probability=round(w.probability, 2)
-                ))
+        segments_generator, info = model.transcribe(
+            wav_path,
+            beam_size=5,
+            word_timestamps=True,
+            language="ko"  # default to Korean, faster-whisper will detect if different
+        )
         
-        segments_list.append(Segment(
-            id=seg_idx,
-            start=round(seg.start, 2),
-            end=round(seg.end, 2),
-            text=seg.text.strip(),
-            words=words
-        ))
-        seg_idx += 1
+        total_audio_sec = max(1.0, float(info.duration or 1.0))
+        segments_list = []
+        seg_idx = 0
+        last_pct = 40
+
+        for seg in segments_generator:
+            words = []
+            if seg.words:
+                for w in seg.words:
+                    words.append(Word(
+                        word=w.word.strip(),
+                        start=round(w.start, 2),
+                        end=round(w.end, 2),
+                        probability=round(w.probability, 2)
+                    ))
+            
+            segments_list.append(Segment(
+                id=seg_idx,
+                start=round(seg.start, 2),
+                end=round(seg.end, 2),
+                text=seg.text.strip(),
+                words=words
+            ))
+            seg_idx += 1
+            
+        transcript = Transcript(
+            language=info.language,
+            duration=round(info.duration, 2),
+            segments=segments_list
+        )
         
-    transcript = Transcript(
-        language=info.language,
-        duration=round(info.duration, 2),
-        segments=segments_list
-    )
-    
-    # Save cache
-    with open(cache_file, "w", encoding="utf-8") as f:
-        json.dump(transcript.model_dump(), f, ensure_ascii=False, indent=2)
-        
-    # Clean up temp wav
-    if os.path.exists(wav_path):
-        os.remove(wav_path)
-        
-    return transcript
+        # Save cache
+        with open(cache_file, "w", encoding="utf-8") as f:
+            json.dump(transcript.model_dump(), f, ensure_ascii=False, indent=2)
+
+        return transcript
+    finally:
+        # Clean up temp wav
+        if os.path.exists(wav_path):
+            try:
+                os.remove(wav_path)
+            except Exception:
+                pass

@@ -25,68 +25,67 @@ def detect_face_center_x(
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     centers_x = []
 
-    # Priority 1: YuNet Deep Learning Detector (Fast & High Accuracy)
-    if YUNET_PATH.exists() and hasattr(cv2, "FaceDetectorYN"):
-        try:
-            detector = cv2.FaceDetectorYN.create(
-                str(YUNET_PATH), "", (640, 360), score_threshold=0.6
-            )
-            curr_time = start_time
-            while curr_time <= end_time:
-                frame_idx = int(curr_time * fps)
-                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-                ret, frame = cap.read()
-                if not ret:
-                    break
-
-                h, w, _ = frame.shape
-                detector.setInputSize((w, h))
-                _, faces = detector.detect(frame)
-                if faces is not None and len(faces) > 0:
-                    largest = max(faces, key=lambda f: f[2] * f[3])
-                    fx, fy, fw, fh = largest[0:4].astype(int)
-                    centers_x.append(fx + fw // 2)
-
-                curr_time += sample_interval
-
-            cap.release()
-            if centers_x:
-                return int(np.median(centers_x))
-            return None
-        except Exception:
-            pass
-
-    # Priority 2: Haar Cascade Fallback
-    if CASCADE_PATH.exists() and hasattr(cv2, "CascadeClassifier"):
-        try:
-            face_cascade = cv2.CascadeClassifier(str(CASCADE_PATH))
-            curr_time = start_time
-            while curr_time <= end_time:
-                frame_idx = int(curr_time * fps)
-                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-                ret, frame = cap.read()
-                if not ret:
-                    break
-
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                faces = face_cascade.detectMultiScale(
-                    gray, scaleFactor=1.1, minNeighbors=5, minSize=(80, 80)
+    try:
+        # Priority 1: YuNet Deep Learning Detector (Fast & High Accuracy)
+        if YUNET_PATH.exists() and hasattr(cv2, "FaceDetectorYN"):
+            try:
+                detector = cv2.FaceDetectorYN.create(
+                    str(YUNET_PATH), "", (640, 360), score_threshold=0.6
                 )
-                if len(faces) > 0:
-                    largest_face = max(faces, key=lambda f: f[2] * f[3])
-                    fx, fy, fw, fh = largest_face
-                    centers_x.append(fx + fw // 2)
+                curr_time = start_time
+                while curr_time <= end_time:
+                    frame_idx = int(curr_time * fps)
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
 
-                curr_time += sample_interval
+                    h, w, _ = frame.shape
+                    detector.setInputSize((w, h))
+                    _, faces = detector.detect(frame)
+                    if faces is not None and len(faces) > 0:
+                        largest = max(faces, key=lambda f: f[2] * f[3])
+                        fx, fy, fw, fh = largest[0:4].astype(int)
+                        centers_x.append(fx + fw // 2)
 
+                    curr_time += sample_interval
+
+                if centers_x:
+                    return int(np.median(centers_x))
+            except Exception:
+                pass
+
+        # Priority 2: Haar Cascade Fallback
+        if CASCADE_PATH.exists() and hasattr(cv2, "CascadeClassifier"):
+            try:
+                face_cascade = cv2.CascadeClassifier(str(CASCADE_PATH))
+                curr_time = start_time
+                while curr_time <= end_time:
+                    frame_idx = int(curr_time * fps)
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    faces = face_cascade.detectMultiScale(
+                        gray, scaleFactor=1.1, minNeighbors=5, minSize=(80, 80)
+                    )
+                    if len(faces) > 0:
+                        largest_face = max(faces, key=lambda f: f[2] * f[3])
+                        fx, fy, fw, fh = largest_face
+                        centers_x.append(fx + fw // 2)
+
+                    curr_time += sample_interval
+
+                if centers_x:
+                    return int(np.median(centers_x))
+            except Exception:
+                pass
+    finally:
+        if cap.isOpened():
             cap.release()
-            if centers_x:
-                return int(np.median(centers_x))
-        except Exception:
-            pass
 
-    if cap.isOpened():
-        cap.release()
     return None
 
 OVERLAY_LAYOUTS = {
@@ -101,9 +100,14 @@ OVERLAY_LAYOUTS = {
 }
 
 COLOR_GRADE_PROFILES = {
-    "vibrant": "eq=contrast=1.06:brightness=0.01:saturation=1.14,unsharp=5:5:0.7:5:5:0.3",
-    "cinematic": "eq=contrast=1.12:brightness=-0.02:saturation=0.96,unsharp=5:5:0.6:5:5:0.2",
-    "clean": "unsharp=5:5:0.6:5:5:0.2",
+    # 2026 YouTube Shorts Algorithmic Color Grading Presets (Skin-tone Protected & Crisp)
+    "vibrant_tech": "eq=contrast=1.07:brightness=0.01:saturation=1.15,colorbalance=rs=0.012:gs=0.012:bs=-0.008:rm=0.012:gm=0.008:bm=0.015,unsharp=5:5:0.70:5:5:0.25",
+    "warm_clean": "eq=contrast=1.05:brightness=0.02:saturation=1.08,colorbalance=rs=0.035:gs=0.012:bs=-0.020:rm=0.025:gm=0.008:bm=-0.015,unsharp=5:5:0.60:5:5:0.20",
+    "film_contrast": "eq=contrast=1.12:brightness=-0.015:saturation=1.02,colorbalance=rs=-0.015:gs=0.008:bs=0.030:rh=0.025:gh=0.008:bh=-0.025,unsharp=5:5:0.65:5:5:0.25",
+    # Backward compatible aliases
+    "vibrant": "eq=contrast=1.07:brightness=0.01:saturation=1.15,colorbalance=rs=0.012:gs=0.012:bs=-0.008:rm=0.012:gm=0.008:bm=0.015,unsharp=5:5:0.70:5:5:0.25",
+    "cinematic": "eq=contrast=1.12:brightness=-0.015:saturation=1.02,colorbalance=rs=-0.015:gs=0.008:bs=0.030:rh=0.025:gh=0.008:bh=-0.025,unsharp=5:5:0.65:5:5:0.25",
+    "clean": "unsharp=5:5:0.65:5:5:0.22",
     "none": "",
 }
 
@@ -137,8 +141,8 @@ def build_framing_filter(
     Returns: (filter_str, final_label)
     """
     dur = max(1.0, end_time - start_time)
-    z_start = round(dur * 0.25, 1)
-    z_end = round(dur * 0.65, 1)
+    z_start = round(min(4.5, dur * 0.22), 2)
+    z_end = round(max(z_start + 3.0, dur * 0.70), 2)
 
     # 1. Source burned-in subtitle removal (delogo inpainting filter)
     delogo_prefix = ""
@@ -175,10 +179,10 @@ def build_framing_filter(
 
     filter_prep = f"{delogo_prefix}{cg_prefix}"
 
-    # 3. Dynamic Punch-in Zoom (1.10x center punch-in during middle explanation)
+    # 3. Dynamic Punch-in Zoom (Submagic/CapCut 1.08x focal focus during explanation)
     zoom_filter = ""
-    if enable_punch_in_zoom and dur >= 7.0:
-        zoom_filter = f"crop='if(between(t,{z_start},{z_end}),iw/1.10,iw)':'if(between(t,{z_start},{z_end}),ih/1.10,ih)':(iw-ow)/2:(ih-oh)/2,"
+    if enable_punch_in_zoom and dur >= 6.5:
+        zoom_filter = f"crop='if(between(t,{z_start},{z_end}),2*trunc(iw/2.16),iw)':'if(between(t,{z_start},{z_end}),2*trunc(ih/2.16),ih)':(iw-ow)/2:(ih-oh)/2,"
 
     # 3. 16:9 Landscape Video Canvas (1920x1080)
     if aspect_ratio == "16:9":
