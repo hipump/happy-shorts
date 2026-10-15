@@ -130,12 +130,12 @@ def split_hook_headline(title: str, hook_text: str) -> Tuple[str, str]:
     Line 2: High-impact punchline (e.g., '모르면 100만원 손해인 기능!')
     """
     emoji_pattern = r'[\U00010000-\U0010ffff\u2600-\u27bf\ud83c-\ud83e\ud83d\udc00-\udfff]'
-    clean_hook = re.sub(emoji_pattern, '', hook_text.strip().strip("\"'「」『』")).strip() if hook_text else ""
-    clean_title = re.sub(emoji_pattern, '', title.strip().strip("\"'「」『』")).strip() if title else ""
+    clean_hook = re.sub(r'에이아이', 'AI', re.sub(emoji_pattern, '', hook_text.strip().strip("\"'「」『』")).strip()) if hook_text else ""
+    clean_title = re.sub(r'에이아이', 'AI', re.sub(emoji_pattern, '', title.strip().strip("\"'「」『』")).strip()) if title else ""
 
     def clean_res(p1: str, p2: str) -> Tuple[str, str]:
-        c1 = re.sub(emoji_pattern, '', p1).strip()
-        c2 = re.sub(emoji_pattern, '', p2).strip()
+        c1 = re.sub(r'에이아이', 'AI', re.sub(emoji_pattern, '', p1).strip())
+        c2 = re.sub(r'에이아이', 'AI', re.sub(emoji_pattern, '', p2).strip())
         return c1, c2
 
     # Delimiter-based split
@@ -785,10 +785,13 @@ def draw_tesla_t(draw: ImageDraw.ImageDraw, x: int, y: int, col: Tuple[int, int,
 EMOJI_PATTERN = re.compile(r'[\U00010000-\U0010ffff\u2600-\u27bf\u2b50\u2b55\ud83c-\ud83e\ud83d\udc00-\udfff★☆✦✧]')
 
 def clean_emoji_text(text: str) -> str:
-    """Strips all emoji characters and star symbols to maintain clean editorial typography."""
+    """Strips all emoji characters and star symbols, and normalizes acronyms ('에이아이' -> 'AI')."""
     if not text:
         return ""
     cleaned = EMOJI_PATTERN.sub('', text)
+    cleaned = re.sub(r'에이아이', 'AI', cleaned)
+    cleaned = re.sub(r'에프에스디', 'FSD', cleaned)
+    cleaned = re.sub(r'오티에이', 'OTA', cleaned)
     return re.sub(r'\s+', ' ', cleaned).strip()
 
 def draw_pill_badge(
@@ -1298,7 +1301,7 @@ def render_template_background(
         chat_y = sub_slot_y + 150
 
         # Reply 1: User yellow bubble (right-aligned, timestamp cleanly right-aligned to left of bubble)
-        p1 = pts[0][:26]
+        p1 = re.sub(r'에이아이', 'AI', pts[0][:26])
         tbp1 = f_pret_28.getbbox(p1)
         wp1 = tbp1[2] - tbp1[0]
         bwp1 = min(680, max(200, wp1 + 50))
@@ -1308,7 +1311,7 @@ def render_template_background(
         draw.text((rx1 - 15, chat_y + 60), "오후 2:14", font=f_pret_18, fill=(110, 130, 150), anchor="rm")
 
         # Reply 2: Participant white bubble (left-aligned with avatar)
-        p2 = pts[1][:26] if len(pts) > 1 else "이거 진짜 꿀팁이네 ㅋㅋㅋ"
+        p2 = re.sub(r'에이아이', 'AI', pts[1][:26] if len(pts) > 1 else "이거 진짜 꿀팁이네 ㅋㅋㅋ")
         draw.ellipse([60, chat_y + 95, 110, chat_y + 145], fill=(255, 255, 255))
         draw_vector_chat_bubble(draw, 85, chat_y + 120, w=20, h=16, fill=(100, 110, 125))
         tbp2 = f_pret_28.getbbox(p2)
@@ -1319,7 +1322,7 @@ def render_template_background(
         draw.text((125 + bwp2 + 15, chat_y + 155), "오후 2:15", font=f_pret_18, fill=(130, 150, 170), anchor="lm")
 
         # Reply 3: Another participant bubble
-        p3 = pts[2][:26] if len(pts) > 2 else "영상 끝까지 보고 저장 완료!"
+        p3 = re.sub(r'에이아이', 'AI', pts[2][:26] if len(pts) > 2 else "영상 끝까지 보고 저장 완료!")
         tbp3 = f_pret_28.getbbox(p3)
         wp3 = tbp3[2] - tbp3[0]
         bwp3 = min(680, max(200, wp3 + 50))
@@ -2819,6 +2822,12 @@ def generate_subtitle_track(
     blank_png = str(out_dir / "blank.png")
     blank_img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
     blank_img.save(blank_png, "PNG", compress_level=1)
+
+    # Normalize acronyms in all subtitle words (e.g. 에이아이 -> AI)
+    for w in words:
+        w.word = re.sub(r'에이아이', 'AI', w.word)
+        w.word = re.sub(r'에프에스디', 'FSD', w.word)
+        w.word = re.sub(r'오티에이', 'OTA', w.word)
 
     if filter_fillers:
         words = filter_filler_words(words)

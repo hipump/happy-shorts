@@ -51,9 +51,9 @@ class LamaInpainter:
     @staticmethod
     def extract_text_mask(crop_bgr: np.ndarray, rel_box: Tuple[int, int, int, int]) -> Tuple[np.ndarray, bool]:
         """
-        Extracts high-precision text stroke mask from subtitle ROI band.
-        Uses connected-component geometry and high-contrast edge filtering to eliminate
-        false positives from clothes, textures, and background patterns.
+        Extracts high-precision mask covering both subtitle text characters and semi-transparent background boxes.
+        Uses gradient magnitude and morphological closing + contour filling to eliminate both text and backing strips,
+        while strictly detecting when genuine subtitles exist on screen.
         Returns: (mask_2d, has_subtitle_text)
         """
         ch, cw, _ = crop_bgr.shape
@@ -74,46 +74,27 @@ class LamaInpainter:
         grad_y = cv2.Sobel(gray_sub, cv2.CV_16S, 0, 1, ksize=3)
         grad_mag = cv2.absdiff(grad_x, 0) + cv2.absdiff(grad_y, 0)
 
-        # Contrast threshold for subtitle letter strokes (raised to 85 for sharp letter edges)
-        edge_raw = (grad_mag > 85).astype(np.uint8) * 255
+        edge_mask = (grad_mag > 65).astype(np.uint8) * 255
+        edge_density = np.mean(edge_mask > 0)
 
-        # 2. Candidate text strokes
-        k_stroke = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-        edge_dilated = cv2.dilate(edge_raw, k_stroke, iterations=1)
-
-        # 3. Horizontal morphological bridge (connect characters into words/sentences)
-        k_bridge = cv2.getStructuringElement(cv2.MORPH_RECT, (13, 3))
-        bridged = cv2.morphologyEx(edge_dilated, cv2.MORPH_CLOSE, k_bridge)
-
-        # 4. Connected components filtering to eliminate background noise / cloth folds
-        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(bridged, connectivity=8)
-
-        valid_text_mask = np.zeros_like(gray_sub)
-        total_valid_pixels = 0
-        text_line_count = 0
-
-        for i in range(1, num_labels):
-            w = stats[i, cv2.CC_STAT_WIDTH]
-            h = stats[i, cv2.CC_STAT_HEIGHT]
-            area = stats[i, cv2.CC_STAT_AREA]
-
-            # Text line characteristics:
-            # - Minimum width of 15px (at least one Korean syllable/word)
-            # - Height between 10px and 80px (typical subtitle font size in 1080p band)
-            # - Not covering entire band (height < 85% of band height)
-            if 15 <= w and 10 <= h <= min(80, int((by2 - by1) * 0.85)) and area >= 80:
-                valid_text_mask[labels == i] = 255
-                total_valid_pixels += area
-                if w >= 40:
-                    text_line_count += 1
-
-        # If no genuine text lines or total pixel count is too low, no subtitle on screen
-        if text_line_count == 0 or total_valid_pixels < 250:
+        # Zero-latency early-exit: If edge density is below 0.8%, no subtitle on screen
+        if edge_density < 0.008:
             return np.zeros((ch, cw), dtype=np.uint8), False
 
-        # Morphological dilation to encompass full letter bodies & anti-aliased font halos
-        kernel_dilate = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
-        dilated_sub = cv2.dilate(valid_text_mask, kernel_dilate, iterations=2)
+        # 2. Bridge text characters and horizontal subtitle boxes
+        k_close = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 9))
+        closed_sub = cv2.morphologyEx(edge_mask, cv2.MORPH_CLOSE, k_close)
+
+        # 3. Fill solid interiors of both text letter bodies and background backing boxes
+        contours, _ = cv2.findContours(closed_sub, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        filled_sub = np.zeros_like(gray_sub)
+        for cnt in contours:
+            if cv2.contourArea(cnt) > 150:
+                cv2.drawContours(filled_sub, [cnt], -1, 255, thickness=cv2.FILLED)
+
+        # 4. Dilate slightly to cover anti-aliasing edges and halos
+        k_dil = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
+        dilated_sub = cv2.dilate(filled_sub, k_dil, iterations=1)
 
         # Assemble full crop mask
         full_mask = np.zeros((ch, cw), dtype=np.uint8)

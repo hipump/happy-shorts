@@ -4,17 +4,33 @@ from typing import List, Optional, Callable
 import ollama
 from src.models import Transcript, Highlight
 
-def format_transcript_for_llm(transcript: Transcript, max_chars: int = 40000) -> str:
-    """Format segments into compact timestamped dialogue lines."""
-    lines = []
-    total_chars = 0
-    for seg in transcript.segments:
-        line = f"[{int(seg.start)}초 -> {int(seg.end)}초] {seg.text}"
-        if total_chars + len(line) > max_chars:
+def format_transcript_for_llm(transcript: Transcript, max_chars: int = 50000) -> str:
+    """
+    Format segments into compact timestamped dialogue lines.
+    If the transcript exceeds max_chars (e.g. 1-hour video), intelligently samples
+    dialogue across the ENTIRE video timeline so highlights can be discovered
+    from beginning, middle, and end.
+    """
+    if not transcript.segments:
+        return ""
+
+    all_lines = [f"[{int(seg.start)}초 -> {int(seg.end)}초] {seg.text}" for seg in transcript.segments]
+    total_len = sum(len(l) + 1 for l in all_lines)
+    if total_len <= max_chars:
+        return "\n".join(all_lines)
+
+    # Transcript exceeds max_chars: sample evenly across the entire duration
+    stride = max(1, int(total_len / max_chars * 1.05))
+    sampled_lines = []
+    curr_len = 0
+    for i in range(0, len(all_lines), stride):
+        line = all_lines[i]
+        if curr_len + len(line) + 1 > max_chars:
             break
-        lines.append(line)
-        total_chars += len(line)
-    return "\n".join(lines)
+        sampled_lines.append(line)
+        curr_len += len(line) + 1
+
+    return "\n".join(sampled_lines)
 
 import os
 import subprocess
@@ -163,16 +179,27 @@ def strip_emojis(text: str) -> str:
         return ""
     return EMOJI_REGEX.sub('', text).strip()
 
+def normalize_acronyms(text: str) -> str:
+    """Standardize phonetic acronyms (e.g. '에이아이' -> 'AI', '에프에스디' -> 'FSD')."""
+    if not text:
+        return ""
+    t = re.sub(r'에이아이', 'AI', text)
+    t = re.sub(r'에프에스디', 'FSD', t)
+    t = re.sub(r'오티에이', 'OTA', t)
+    return t
+
 def clean_korean_text(text: str, fallback: str) -> str:
-    """Ensure text does not contain Chinese characters, emojis, or unwanted noise."""
+    """Ensure text does not contain Chinese characters, emojis, or unwanted noise, and normalizes acronyms."""
     if not text or re.search(r'[\u4e00-\u9fff]', text):
-        return strip_emojis(fallback)
-    return strip_emojis(text)
+        raw = strip_emojis(fallback)
+    else:
+        raw = strip_emojis(text)
+    return normalize_acronyms(raw)
 
 def format_hook_badge_text(hook_text: str, title: str) -> str:
-    """Format hook badge text to be punchy, clean, and under 22 chars without emojis."""
-    hook = strip_emojis(hook_text.strip().strip("\"'「」『』"))
-    title_clean = strip_emojis(title.strip().strip("\"'「」『』"))
+    """Format hook badge text to be punchy, clean, and under 22 chars without emojis, with normalized acronyms."""
+    hook = normalize_acronyms(strip_emojis(hook_text.strip().strip("\"'「」『』")))
+    title_clean = normalize_acronyms(strip_emojis(title.strip().strip("\"'「」『』")))
 
     if 4 <= len(hook) <= 20:
         target = hook
@@ -190,9 +217,8 @@ def generate_hook_variants(title: str, hook_text: str) -> dict:
     2. Loss Aversion / Urgency: '모르면 무조건 손해보는 {topic}'
     3. Extreme Benefit / Shortcut: '3초 만에 끝내는 {topic}'
     """
-    emoji_pattern = r'[\U00010000-\U0010ffff\u2600-\u27bf\ud83c-\ud83e\ud83d\udc00-\udfff]'
-    clean_title = re.sub(emoji_pattern, '', title).strip().strip("\"'「」『』[]")
-    clean_hook = re.sub(emoji_pattern, '', hook_text).strip().strip("\"'「」『』[]")
+    clean_title = normalize_acronyms(strip_emojis(title).strip().strip("\"'「」『』[]"))
+    clean_hook = normalize_acronyms(strip_emojis(hook_text).strip().strip("\"'「」『』[]"))
     base = clean_hook if (clean_hook and len(clean_hook) <= 16) else clean_title[:14]
     if not base:
         base = "핵심 실전 꿀팁"
@@ -286,13 +312,14 @@ def summarize_clip_content(
             f"이 클립에서 설명하는 실전 핵심 정보/꿀팁 2가지를 요약하여 JSON으로 응답하세요.\n"
             f"규칙:\n"
             f"1. 이모지 절대 금지\n"
-            f"2. 각 요약은 25자 이내의 명확한 사실 정보 (예: '트렁크 뒤 비프음 3회 후 자동 오픈', '천장 낮은 주차장에서 높이 조절')\n"
-            f"3. '시청자 몰입도', '핵심 구간', '하이라이트' 같은 추상적인 문구 절대 금지\n"
+            f"2. '에이아이' 표기 절대 금지, 반드시 표준 영어 약어 'AI'로 표기\n"
+            f"3. 각 요약은 25자 이내의 명확한 사실 정보 (예: '트렁크 뒤 비프음 3회 후 자동 오픈', '천장 낮은 주차장에서 높이 조절')\n"
+            f"4. '시청자 몰입도', '핵심 구간', '하이라이트' 같은 추상적인 문구 절대 금지\n"
         )
         resp = ollama.chat(
             model=model_name,
             messages=[
-                {"role": "system", "content": "You are a concise video summarizer. Output 2 factual bullet points in Korean without emojis."},
+                {"role": "system", "content": "You are a concise video summarizer. Output 2 factual bullet points in Korean without emojis. Always write 'AI' instead of '에이아이'."},
                 {"role": "user", "content": prompt}
             ],
             format={
@@ -308,12 +335,12 @@ def summarize_clip_content(
             options={"temperature": 0.2}
         )
         data = json.loads(resp["message"]["content"])
-        pts = [strip_emojis(p).strip() for p in data.get("points", []) if p]
+        pts = [normalize_acronyms(strip_emojis(p)).strip() for p in data.get("points", []) if p]
         pts = [p for p in pts if len(p) >= 4 and "몰입도" not in p and "핵심 구간" not in p]
         if len(pts) >= 2:
             return pts[:2]
         if len(pts) == 1:
-            pts.append(f"{title} 실전 활용 필수 팁")
+            pts.append(normalize_acronyms(f"{title} 실전 활용 필수 팁"))
             return pts[:2]
     except Exception:
         pass
@@ -322,7 +349,7 @@ def summarize_clip_content(
     points = []
     filler_prefixes = r'^(네|그리고|뭐|그렇죠|자|근데|하지만|또한|진짜|정말|이것도)\s*,?\s*'
     for s in clip_segs:
-        text = strip_emojis(s.text.strip())
+        text = normalize_acronyms(strip_emojis(s.text.strip()))
         cleaned = re.sub(filler_prefixes, '', text).strip()
         cleaned = re.sub(r'[\.\?\!]+$', '', cleaned).strip()
         if len(cleaned) >= 8 and not any(f in cleaned for f in ["몰입도", "핵심 구간", "하이라이트"]):
@@ -332,7 +359,7 @@ def summarize_clip_content(
             break
 
     if len(points) < 1:
-        points.append(f"{title if title else '영상 주요 기능'} 실전 가이드")
+        points.append(normalize_acronyms(f"{title if title else '영상 주요 기능'} 실전 가이드"))
     if len(points) < 2:
         points.append("실제 상황에서 바로 활용 가능한 팁")
     return points[:2]
@@ -479,23 +506,29 @@ def detect_highlights(
         "4. Trend (0~20): High curiosity and shareability for a wide audience.\n\n"
         "CRITICAL RULES:\n"
         f"1. Target length: Highlight clips MUST span {min_dur} to {max_dur} seconds.\n"
-        "2. LANGUAGE: You MUST write title, hook_text, reason, and summary_points in 100% natural, high-CTR KOREAN (Hangul).\n"
+        f"2. EXACT CLIP COUNT: You MUST select and return EXACTLY {max_count} distinct highlight clips. DO NOT return fewer than {max_count} clips.\n"
+        "3. LANGUAGE: You MUST write title, hook_text, reason, and summary_points in 100% natural, high-CTR KOREAN (Hangul).\n"
         "   - NEVER use Chinese characters (Hanzi). Only Korean Hangul.\n"
-        "3. hook_text: Short, punchy hook under 20 chars in Korean WITHOUT emojis (e.g., '사이드미러 4만원 해결법').\n"
-        "4. title: Click-worthy Korean YouTube Shorts title (e.g., '70만원 수리비 단돈 4만원에 끝내는 비결'). Do NOT repeat words.\n"
-        "5. virality_score: Integer from 60 to 99 representing true viral retention potential.\n"
-        "6. score_breakdown: Object with keys 'hook', 'flow', 'value', 'trend'.\n"
-        "7. summary_points: EXACTLY 2 concrete bullet points summarizing the actual practical facts/methods (under 28 chars each in Korean). Do NOT write generic filler.\n"
-        "8. Output ONLY the specified JSON structure.\n"
+        "4. hook_text: Short, punchy hook under 20 chars in Korean WITHOUT emojis (e.g., '사이드미러 4만원 해결법').\n"
+        "5. title: Click-worthy Korean YouTube Shorts title (e.g., '70만원 수리비 단돈 4만원에 끝내는 비결'). Do NOT repeat words.\n"
+        "6. virality_score: Integer from 75 to 99 representing true viral retention potential (Standard clip: 78~84, High-impact: 85~92, Viral killer clip: 93~98).\n"
+        "7. score_breakdown: Object with keys 'hook', 'flow', 'value', 'trend'.\n"
+        "8. summary_points: EXACTLY 2 concrete bullet points summarizing the actual practical facts/methods (under 28 chars each in Korean). Do NOT write generic filler.\n"
+        "9. Output ONLY the specified JSON structure.\n"
     )
 
-    user_prompt = f"다음 자막 대본을 분석하여 바이럴 가능성이 가장 높은 쇼츠 {max_count}개를 선정해 JSON으로 응답하세요:\n\n{formatted_text}"
+    user_prompt = (
+        f"다음 자막 대본을 심층 분석하여 바이럴 가능성이 가장 높은 쇼츠 클립을 서로 다른 시간대에서 "
+        f"정확히 {max_count}개 선정해 JSON 'highlights' 배열에 담아 응답하세요. "
+        f"(반드시 {max_count}개의 클립을 모두 작성해야 합니다):\n\n{formatted_text}"
+    )
 
     schema = {
         "type": "object",
         "properties": {
             "highlights": {
                 "type": "array",
+                "minItems": max_count,
                 "items": {
                     "type": "object",
                     "properties": {
@@ -619,27 +652,27 @@ def detect_highlights(
 
             # Viral Keyword & Financial Contrast Detection
             all_clip_text = " ".join(seg.text for seg in transcript.segments if seg.start >= (s_start - 0.2) and seg.end <= (s_end + 0.2))
-            has_money_contrast = bool(re.search(r'(\d+만\s*원|\d+원|70만|4만|100만|비용|수리비|견적|환불|할증|절약)', all_clip_text))
-            has_loss_aversion = any(kw in all_clip_text for kw in ["눈탱이", "호구", "손해", "실수", "당하지", "사기", "비밀", "꿀팁", "아끼", "절대", "주의"])
+            has_money_contrast = bool(re.search(r'(\d+만\s*원|\d+원|70만|4만|100만|비용|수리비|견적|환불|할증|절약|\d+(\.\d+)?\s*(배|%|프로))', all_clip_text))
+            has_loss_aversion = any(kw in all_clip_text for kw in ["눈탱이", "호구", "손해", "실수", "당하지", "사기", "비밀", "꿀팁", "아끼", "절대", "주의", "편해", "핵심", "중요"])
             is_boring_cliche = any(kw in all_clip_text for kw in ["안전지대", "가드레일", "삼각대", "대피", "112", "신고"]) and not has_money_contrast
 
             raw_v = item.get("virality_score")
-            base_llm = int(raw_v) if raw_v and str(raw_v).isdigit() else 80
+            base_llm = int(raw_v) if (raw_v and str(raw_v).isdigit() and int(raw_v) >= 50) else 82
 
             # Dynamic multi-factor scoring with extreme contrast reward & cliché penalty
             hook_bonus = (6 if has_money_contrast else (3 if has_curiosity_hook else 0))
             value_bonus = (5 if has_loss_aversion else 2) + (3 if has_money_contrast else 0)
-            cliche_penalty = -16 if is_boring_cliche else 0
+            cliche_penalty = -14 if is_boring_cliche else 0
 
-            hook_sc = min(30, max(14, 18 + hook_bonus))
-            flow_sc = min(25, max(14, 18 + (4 if 110 <= wpm <= 190 else 1)))
-            value_sc = min(25, max(14, 16 + value_bonus))
-            trend_sc = min(20, max(12, 14 + (4 if has_money_contrast or has_loss_aversion else 1)))
+            hook_sc = min(30, max(18, 20 + hook_bonus))
+            flow_sc = min(25, max(16, 19 + (4 if 110 <= wpm <= 200 else 1)))
+            value_sc = min(25, max(16, 18 + value_bonus))
+            trend_sc = min(20, max(14, 15 + (3 if has_money_contrast or has_loss_aversion else 0)))
 
             v_score = hook_sc + flow_sc + value_sc + trend_sc + cliche_penalty
             if base_llm:
-                v_score = int(v_score * 0.6 + base_llm * 0.4)
-            v_score = min(99, max(60, v_score))
+                v_score = int(v_score * 0.5 + base_llm * 0.5)
+            v_score = min(98, max(70, v_score))
 
             score_breakdown = {
                 "hook": hook_sc,
@@ -670,17 +703,43 @@ def detect_highlights(
                 stat_pill=stat_pill
             ))
 
+        # Guarantee EXACTLY max_count highlights:
+        # If LLM returned fewer, or overlap filtering removed some, fill remaining slots with heuristic candidates!
+        if len(highlights) < max_count:
+            needed = max_count - len(highlights)
+            if callback:
+                callback(92, f"AI 하이라이트 {len(highlights)}개 확보됨. 목표 {max_count}개 충족을 위해 고밀도 구간 {needed}개 자동 보정 중...")
+            
+            fallback_candidates = fallback_heuristic_highlights(
+                transcript, count=max_count * 3, min_dur=min_dur, max_dur=max_dur
+            )
+            for cand in fallback_candidates:
+                overlap = False
+                for prev in highlights:
+                    overlap_sec = max(0.0, min(cand.end_time, prev.end_time) - max(cand.start_time, prev.start_time))
+                    if overlap_sec > 8.0:
+                        overlap = True
+                        break
+                if not overlap:
+                    highlights.append(cand)
+                    if len(highlights) >= max_count:
+                        break
+
         if highlights:
             # Sort clips by virality_score descending so top viral killer clip is always #1!
             highlights.sort(key=lambda h: h.virality_score, reverse=True)
-            for i, h in enumerate(highlights):
-                h.id = i + 1
+            for i, h in enumerate(highlights[:max_count], 1):
+                h.id = i
+            final_count = min(len(highlights), max_count)
             if callback:
-                callback(96, f"최종 {len(highlights)}개 고득점 하이라이트 구간 확정 완료")
+                callback(96, f"최종 {final_count}개 고득점 하이라이트 구간 확정 완료")
             return highlights[:max_count]
 
     except Exception as e:
         print(f"[Warning] Ollama highlight extraction fallback triggered: {e}")
 
-    # Fallback heuristic
-    return fallback_heuristic_highlights(transcript, count=max_count, min_dur=min_dur, max_dur=max_dur)
+    # Complete fallback heuristic
+    fallback_res = fallback_heuristic_highlights(transcript, count=max_count, min_dur=min_dur, max_dur=max_dur)
+    for i, h in enumerate(fallback_res[:max_count], 1):
+        h.id = i
+    return fallback_res[:max_count]

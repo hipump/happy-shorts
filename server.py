@@ -188,17 +188,27 @@ def list_templates():
 def list_recent_videos():
     """Returns cached videos in downloads directory for instant reuse."""
     items = []
-    for f in DOWNLOADS_DIR.glob("*.mp4"):
-        if f.is_file() and f.stat().st_size > 1024:
-            stat = f.stat()
-            items.append({
-                "filename": f.name,
-                "filepath": str(f),
-                "size_mb": round(stat.st_size / (1024 * 1024), 1),
-                "modified_at": stat.st_mtime,
-                "stream_url": f"/media/downloads/{f.name}"
-            })
-    items.sort(key=lambda x: x["modified_at"], reverse=True)
+    try:
+        for f in DOWNLOADS_DIR.glob("*.mp4"):
+            try:
+                if not f.is_file() or f.name.startswith(".") or f.name.endswith(".tmp"):
+                    continue
+                stat = f.stat()
+                if stat.st_size <= 1024:
+                    continue
+                items.append({
+                    "filename": f.name,
+                    "filepath": str(f),
+                    "size_mb": round(stat.st_size / (1024 * 1024), 1),
+                    "modified_at": stat.st_mtime,
+                    "stream_url": f"/media/downloads/{f.name}"
+                })
+            except Exception:
+                continue
+        items.sort(key=lambda x: x["modified_at"], reverse=True)
+    except Exception as e:
+        print(f"[Warning] list_recent_videos failed: {e}")
+        return {"videos": []}
     return {"videos": items}
 
 video_meta_cache: Dict[str, dict] = {}
@@ -220,7 +230,7 @@ def get_cached_video_meta(video_path: Path) -> dict:
             "ffprobe", "-v", "error", "-select_streams", "v:0",
             "-show_entries", "stream=width,height,duration",
             "-of", "csv=s=x:p=0", str(video_path)
-        ], text=True, timeout=2.0).strip().split("x")
+        ], text=True, timeout=3.0).strip().split("x")
         if len(out) >= 2:
             width = int(out[0])
             height = int(out[1])
@@ -244,80 +254,91 @@ def get_cached_video_meta(video_path: Path) -> dict:
 def list_outputs():
     """Returns all generated shorts in output directory with rich metadata."""
     items = []
-    for f in OUTPUT_DIR.glob("*.mp4"):
-        if f.is_file():
-            stat = f.stat()
-            stem = f.stem
-            base_key = stem[6:] if stem.startswith("short_") else stem
-            
-            # Matching txt file
-            txt_path = OUTPUT_DIR / f"shorts_info_{base_key}.txt"
-            txt_fallback = OUTPUT_DIR / f"{stem}.txt"
-            seo_info = ""
-            if txt_path.exists():
-                try:
-                    seo_info = txt_path.read_text(encoding="utf-8")
-                except Exception:
-                    pass
-            elif txt_fallback.exists():
-                try:
-                    seo_info = txt_fallback.read_text(encoding="utf-8")
-                except Exception:
-                    pass
+    try:
+        for f in OUTPUT_DIR.glob("*.mp4"):
+            try:
+                if not f.is_file() or f.name.startswith(".") or f.name.endswith(".tmp") or ".rendering" in f.name:
+                    continue
+                stat = f.stat()
+                if stat.st_size < 1024:
+                    continue
+                stem = f.stem
+                base_key = stem[6:] if stem.startswith("short_") else stem
+                
+                # Matching txt file
+                txt_path = OUTPUT_DIR / f"shorts_info_{base_key}.txt"
+                txt_fallback = OUTPUT_DIR / f"{stem}.txt"
+                seo_info = ""
+                if txt_path.exists():
+                    try:
+                        seo_info = txt_path.read_text(encoding="utf-8")
+                    except Exception:
+                        pass
+                elif txt_fallback.exists():
+                    try:
+                        seo_info = txt_fallback.read_text(encoding="utf-8")
+                    except Exception:
+                        pass
 
-            # Matching cover jpg (auto-generate if missing)
-            cover_path = OUTPUT_DIR / f"cover_{base_key}.jpg"
-            if not cover_path.exists():
-                try:
-                    subprocess.run([
-                        "ffmpeg", "-y", "-ss", "00:00:01.0", "-i", str(f),
-                        "-vframes", "1", "-q:v", "2", str(cover_path)
-                    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-                except Exception:
-                    pass
+                # Matching cover jpg (auto-generate if missing)
+                cover_path = OUTPUT_DIR / f"cover_{base_key}.jpg"
+                if not cover_path.exists():
+                    try:
+                        subprocess.run([
+                            "ffmpeg", "-y", "-ss", "00:00:01.0", "-i", str(f),
+                            "-vframes", "1", "-q:v", "2", str(cover_path)
+                        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=4.0)
+                    except Exception:
+                        pass
 
-            cover_url = f"/media/output/{cover_path.name}" if cover_path.exists() else None
+                cover_url = f"/media/output/{cover_path.name}" if cover_path.exists() else None
 
-            # Video technical metadata
-            vmeta = get_cached_video_meta(f)
+                # Video technical metadata
+                vmeta = get_cached_video_meta(f)
 
-            # Parse SEO content for rich display
-            title = ""
-            virality_score = None
-            tags = []
-            if seo_info:
-                score_m = re.search(r"바이럴\s*점수:\s*(\d+)점", seo_info)
-                if score_m:
-                    virality_score = int(score_m.group(1))
+                # Parse SEO content for rich display
+                title = ""
+                virality_score = None
+                tags = []
+                if seo_info:
+                    score_m = re.search(r"바이럴\s*점수:\s*(\d+)점", seo_info)
+                    if score_m:
+                        virality_score = int(score_m.group(1))
 
-                title_m = re.search(r"1안:\s*(.+)", seo_info)
-                if title_m:
-                    title = title_m.group(1).strip()
+                    title_m = re.search(r"1안:\s*(.+)", seo_info)
+                    if title_m:
+                        title = title_m.group(1).strip()
 
-                tags = list(dict.fromkeys(re.findall(r"#[\w가-힣]+", seo_info)))[:6]
+                    tags = list(dict.fromkeys(re.findall(r"#[\w가-힣]+", seo_info)))[:6]
 
-            if not title:
-                cleaned = re.sub(r"^(short_|shorts_)", "", stem)
-                cleaned = cleaned.replace("_", " ").strip()
-                title = cleaned if cleaned else f.name
+                if not title:
+                    cleaned = re.sub(r"^(short_|shorts_)", "", stem)
+                    cleaned = cleaned.replace("_", " ").strip()
+                    title = cleaned if cleaned else f.name
 
-            items.append({
-                "filename": f.name,
-                "filepath": str(f),
-                "size_mb": round(stat.st_size / (1024 * 1024), 2),
-                "modified_at": stat.st_mtime,
-                "stream_url": f"/media/output/{f.name}",
-                "cover_url": cover_url,
-                "seo_content": seo_info,
-                "title": title,
-                "virality_score": virality_score,
-                "tags": tags,
-                "duration": vmeta["duration"],
-                "aspect_ratio": vmeta["aspect_ratio"],
-                "width": vmeta["width"],
-                "height": vmeta["height"]
-            })
-    items.sort(key=lambda x: x["modified_at"], reverse=True)
+                items.append({
+                    "filename": f.name,
+                    "filepath": str(f),
+                    "size_mb": round(stat.st_size / (1024 * 1024), 2),
+                    "modified_at": stat.st_mtime,
+                    "stream_url": f"/media/output/{f.name}",
+                    "cover_url": cover_url,
+                    "seo_content": seo_info,
+                    "title": title,
+                    "virality_score": virality_score,
+                    "tags": tags,
+                    "duration": vmeta["duration"],
+                    "aspect_ratio": vmeta["aspect_ratio"],
+                    "width": vmeta["width"],
+                    "height": vmeta["height"]
+                })
+            except Exception as item_err:
+                print(f"[Warning] Skipping malformed output file {f}: {item_err}")
+                continue
+        items.sort(key=lambda x: x["modified_at"], reverse=True)
+    except Exception as e:
+        print(f"[Error] list_outputs failed: {e}")
+        return {"outputs": []}
     return {"outputs": items}
 
 @app.post("/api/open-folder")
@@ -411,7 +432,7 @@ async def run_analysis_task(job_id: str, req: AnalyzeRequest):
             }
         })
 
-        detect_count = max(3, req.clips_count)
+        detect_count = max(1, req.clips_count)
         target_dur = (req.min_dur, req.max_dur)
 
         hl_cb = make_progress_cb(3)
@@ -466,12 +487,31 @@ async def run_analysis_task(job_id: str, req: AnalyzeRequest):
 
         hl_dicts = [h.model_dump() for h in highlights]
 
+        total_words = sum(len(s.words) for s in transcript.segments)
+        dur_min = int(metadata.duration // 60)
+        dur_sec = int(metadata.duration % 60)
+        wpm_avg = int((total_words / max(1.0, metadata.duration)) * 60)
+
+        transcript_summary = {
+            "language": transcript.language,
+            "duration": metadata.duration,
+            "duration_formatted": f"{dur_min}분 {dur_sec}초" if dur_min > 0 else f"{dur_sec}초",
+            "segment_count": len(transcript.segments),
+            "total_words": total_words,
+            "wpm_avg": wpm_avg,
+            "preview_segments": [
+                {"id": s.id, "time": f"{int(s.start//60):02d}:{int(s.start%60):02d}", "text": s.text}
+                for s in transcript.segments[:12]
+            ]
+        }
+
         await emit_job_event(job_id, {
             "status": "completed",
             "progress": 100,
             "step": 4,
-            "message": f"AI 분석 완료! 총 {len(highlights)}개 고득점 후보 구간 도출됨",
+            "message": f"AI 분석 완료! 총 {len(highlights)}개 고득점 후보 구간 도출됨 (전체 {len(transcript.segments)}개 문장 분석)",
             "highlights": hl_dicts,
+            "transcript_summary": transcript_summary,
             "video_metadata": {
                 "title": metadata.title,
                 "duration": metadata.duration,

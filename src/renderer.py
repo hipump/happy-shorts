@@ -403,6 +403,7 @@ def render_short(
     ])
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    temp_render_path = str(clip_temp_dir / "encoded_final.mp4")
     cmd.extend([
         "-c:v", "libx264",
         "-preset", "fast",
@@ -411,13 +412,16 @@ def render_short(
         "-c:a", "aac",
         "-b:a", "192k",
         "-t", str(duration),
-        output_path
+        temp_render_path
     ])
 
     try:
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if result.returncode != 0:
             raise RuntimeError(f"FFmpeg rendering failed: {result.stderr[-1000:]}")
+
+        # Atomically move completed video to output_path
+        shutil.move(temp_render_path, output_path)
 
         if callback:
             callback(88, "비디오 스트림 인코딩 완료 및 임시 리소스 정리 중...")

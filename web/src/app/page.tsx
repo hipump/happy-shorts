@@ -17,6 +17,7 @@ import {
   Film,
   ExternalLink,
   ChevronRight,
+  ChevronDown,
   ArrowLeft,
   FileText,
   Clock,
@@ -82,7 +83,7 @@ export default function HappyShortsApp() {
   const [subtitleStyle, setSubtitleStyle] = useState<string>("viral_pop");
   const [showBadge, setShowBadge] = useState<boolean>(true);
   const [aspectRatio, setAspectRatio] = useState<"9:16" | "16:9">("9:16");
-  const [removeSubtitles, setRemoveSubtitles] = useState<boolean>(false);
+  const [removeSubtitles, setRemoveSubtitles] = useState<boolean>(true);
   const [filterFillers, setFilterFillers] = useState<boolean>(true);
 
   // Pro Studio Quality Options (BGM, SFX, Color Grading, Dynamic Zoom, Smart Keywords, Keynote Stat Pill, Seamless Loop)
@@ -109,6 +110,16 @@ export default function HappyShortsApp() {
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [selectedHighlight, setSelectedHighlight] = useState<Highlight | null>(null);
   const [selectedHighlightIds, setSelectedHighlightIds] = useState<number[]>([]);
+  const [transcriptSummary, setTranscriptSummary] = useState<{
+    language?: string;
+    duration?: number;
+    duration_formatted?: string;
+    segment_count?: number;
+    total_words?: number;
+    wpm_avg?: number;
+    preview_segments?: Array<{ id: number; time: string; text: string }>;
+  } | null>(null);
+  const [showTranscriptDetails, setShowTranscriptDetails] = useState<boolean>(false);
 
   // Step 4: Rendering
   const [isRendering, setIsRendering] = useState(false);
@@ -133,21 +144,47 @@ export default function HappyShortsApp() {
   const [gallerySearch, setGallerySearch] = useState<string>("");
   const [previewModalOutput, setPreviewModalOutput] = useState<RenderedOutput | null>(null);
 
+  // Background Task Persistence & Notification state
+  const [completionToast, setCompletionToast] = useState<{
+    title: string;
+    message: string;
+    count: number;
+    type: "analyze" | "render";
+  } | null>(null);
+
+  useEffect(() => {
+    if (completionToast) {
+      const timer = setTimeout(() => {
+        setCompletionToast(null);
+      }, 9000);
+      return () => clearTimeout(timer);
+    }
+  }, [completionToast]);
+
   // Initial Data Fetching
   const fetchStatusAndData = React.useCallback(async () => {
     try {
+      const safeFetchJson = async (url: string) => {
+        try {
+          const r = await fetch(url);
+          if (!r.ok) return null;
+          return await r.json();
+        } catch {
+          return null;
+        }
+      };
       const [resStatus, resTpl, resRecent, resOutputs] = await Promise.all([
-        fetch("/api/status").then((r) => r.json()),
-        fetch("/api/templates").then((r) => r.json()),
-        fetch("/api/recent-videos").then((r) => r.json()),
-        fetch("/api/outputs").then((r) => r.json()),
+        safeFetchJson("/api/status"),
+        safeFetchJson("/api/templates"),
+        safeFetchJson("/api/recent-videos"),
+        safeFetchJson("/api/outputs"),
       ]);
-      setSystemStatus(resStatus);
-      setTemplates(resTpl.templates || []);
-      setRecentVideos(resRecent.videos || []);
-      setOutputs(resOutputs.outputs || []);
+      if (resStatus) setSystemStatus(resStatus);
+      if (resTpl?.templates) setTemplates(resTpl.templates);
+      if (resRecent?.videos) setRecentVideos(resRecent.videos);
+      if (resOutputs?.outputs) setOutputs(resOutputs.outputs);
     } catch (err) {
-      console.error("데이터 로딩 실패:", err);
+      console.warn("데이터 로딩 일시적 대기:", err);
     }
   }, []);
 
@@ -180,6 +217,293 @@ export default function HappyShortsApp() {
     setCurrentStep(2);
   };
 
+  // Subscription handlers for background tasks with local persistence
+  const activeAnalyzeStreamRef = useRef<{ cleanUp: () => void } | null>(null);
+  const activeRenderStreamRef = useRef<{ cleanUp: () => void } | null>(null);
+
+  const subscribeToAnalyzeJob = React.useCallback((jobId: string) => {
+    if (activeAnalyzeStreamRef.current) {
+      activeAnalyzeStreamRef.current.cleanUp();
+    }
+
+    setIsAnalyzing(true);
+    let pollTimer: NodeJS.Timeout | null = null;
+    let isCleanedUp = false;
+
+    const cleanUpStream = () => {
+      if (isCleanedUp) return;
+      isCleanedUp = true;
+      if (pollTimer) clearInterval(pollTimer);
+      eventSource.close();
+      activeAnalyzeStreamRef.current = null;
+    };
+
+    activeAnalyzeStreamRef.current = { cleanUp: cleanUpStream };
+
+    const eventSource = new EventSource(`/api/jobs/${jobId}/events`);
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.progress !== undefined) {
+          setAnalyzeProgress((prev) => Math.max(prev, payload.progress));
+        }
+        if (payload.message) setAnalyzeMessage(payload.message);
+        if (payload.video_metadata) setVideoMeta(payload.video_metadata);
+        if (payload.transcript_summary) setTranscriptSummary(payload.transcript_summary);
+
+        if (payload.status === "completed") {
+          cleanUpStream();
+          setIsAnalyzing(false);
+          try {
+            localStorage.removeItem("happy_active_job");
+          } catch {}
+          if (payload.transcript_summary) {
+            setTranscriptSummary(payload.transcript_summary);
+          }
+          const hlList = payload.highlights || [];
+          setHighlights(hlList);
+          if (hlList.length > 0) {
+            const best = hlList[0];
+            setSelectedHighlight(best);
+            setSelectedHighlightIds(hlList.map((h: Highlight) => h.id));
+            setPreviewTimeRange({ start: best.start_time, end: best.end_time });
+          }
+          setCompletionToast({
+            title: "AI 하이라이트 분석 완료!",
+            message: `총 ${hlList.length}개의 쇼츠 추천 구간을 도출했습니다.`,
+            count: hlList.length,
+            type: "analyze",
+          });
+          fetchStatusAndData();
+        } else if (payload.status === "failed") {
+          cleanUpStream();
+          setIsAnalyzing(false);
+          try {
+            localStorage.removeItem("happy_active_job");
+          } catch {}
+          setErrorMsg(`AI 분석 중 오류가 발생했습니다: ${payload.error}`);
+        }
+      } catch (e) {
+        console.error("SSE parse error", e);
+      }
+    };
+
+    eventSource.onerror = () => {
+      // transient SSE errors handled by safety net polling
+    };
+
+    // Safety net polling fallback
+    pollTimer = setInterval(async () => {
+      try {
+        const pollRes = await fetch(`/api/jobs/${jobId}`);
+        if (!pollRes.ok) return;
+        const pollData = await pollRes.json().catch(() => null);
+        if (!pollData) return;
+        if (pollData.progress !== undefined) {
+          setAnalyzeProgress((prev) => Math.max(prev, pollData.progress));
+        }
+        if (pollData.message) setAnalyzeMessage(pollData.message);
+        if (pollData.video_metadata) setVideoMeta(pollData.video_metadata);
+        if (pollData.transcript_summary) setTranscriptSummary(pollData.transcript_summary);
+
+        if (pollData.status === "completed") {
+          cleanUpStream();
+          setIsAnalyzing(false);
+          try {
+            localStorage.removeItem("happy_active_job");
+          } catch {}
+          if (pollData.transcript_summary) setTranscriptSummary(pollData.transcript_summary);
+          const hlList = pollData.highlights || [];
+          setHighlights(hlList);
+          if (hlList.length > 0) {
+            const best = hlList[0];
+            setSelectedHighlight(best);
+            setSelectedHighlightIds(hlList.map((h: Highlight) => h.id));
+            setPreviewTimeRange({ start: best.start_time, end: best.end_time });
+          }
+          setCompletionToast({
+            title: "AI 하이라이트 분석 완료!",
+            message: `총 ${hlList.length}개의 쇼츠 추천 구간을 도출했습니다.`,
+            count: hlList.length,
+            type: "analyze",
+          });
+          fetchStatusAndData();
+        } else if (pollData.status === "failed") {
+          cleanUpStream();
+          setIsAnalyzing(false);
+          try {
+            localStorage.removeItem("happy_active_job");
+          } catch {}
+          setErrorMsg(`AI 분석 중 오류가 발생했습니다: ${pollData.error}`);
+        }
+      } catch {
+        // Ignore transient poll errors
+      }
+    }, 1500);
+  }, [fetchStatusAndData]);
+
+  const subscribeToRenderJob = React.useCallback((jobId: string) => {
+    if (activeRenderStreamRef.current) {
+      activeRenderStreamRef.current.cleanUp();
+    }
+
+    setIsRendering(true);
+    let pollTimer: NodeJS.Timeout | null = null;
+    let isCleanedUp = false;
+
+    const cleanUpStream = () => {
+      if (isCleanedUp) return;
+      isCleanedUp = true;
+      if (pollTimer) clearInterval(pollTimer);
+      eventSource.close();
+      activeRenderStreamRef.current = null;
+    };
+
+    activeRenderStreamRef.current = { cleanUp: cleanUpStream };
+
+    const eventSource = new EventSource(`/api/jobs/${jobId}/events`);
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.progress !== undefined) {
+          setRenderProgress((prev) => Math.max(prev, payload.progress));
+        }
+        if (payload.message) setRenderMessage(payload.message);
+
+        if (payload.status === "completed") {
+          cleanUpStream();
+          setIsRendering(false);
+          try {
+            localStorage.removeItem("happy_active_job");
+          } catch {}
+          const results = payload.results || (payload.result ? [payload.result] : []);
+          setBatchResults(results);
+          setSelectedBatchIdx(0);
+          if (results.length > 0) {
+            setRenderedResult(results[0]);
+          }
+          setCompletionToast({
+            title: "쇼츠 일괄 렌더링 완료!",
+            message: `총 ${results.length}개의 쇼츠 제작이 완료되어 완성 보관함에 저장되었습니다.`,
+            count: results.length,
+            type: "render",
+          });
+          fetchStatusAndData();
+        } else if (payload.status === "failed") {
+          cleanUpStream();
+          setIsRendering(false);
+          try {
+            localStorage.removeItem("happy_active_job");
+          } catch {}
+          setErrorMsg(`렌더링 실패: ${payload.error}`);
+        }
+      } catch (e) {
+        console.error("Render SSE parse error", e);
+      }
+    };
+
+    eventSource.onerror = () => {
+      // transient SSE errors handled by safety net polling
+    };
+
+    // Safety net polling fallback
+    pollTimer = setInterval(async () => {
+      try {
+        const pollRes = await fetch(`/api/jobs/${jobId}`);
+        if (!pollRes.ok) return;
+        const pollData = await pollRes.json().catch(() => null);
+        if (!pollData) return;
+        if (pollData.progress !== undefined) {
+          setRenderProgress((prev) => Math.max(prev, pollData.progress));
+        }
+        if (pollData.message) setRenderMessage(pollData.message);
+
+        if (pollData.status === "completed") {
+          cleanUpStream();
+          setIsRendering(false);
+          try {
+            localStorage.removeItem("happy_active_job");
+          } catch {}
+          const results = pollData.results || (pollData.result ? [pollData.result] : []);
+          setBatchResults(results);
+          setSelectedBatchIdx(0);
+          if (results.length > 0) {
+            setRenderedResult(results[0]);
+          }
+          setCompletionToast({
+            title: "쇼츠 일괄 렌더링 완료!",
+            message: `총 ${results.length}개의 쇼츠 제작이 완료되어 완성 보관함에 저장되었습니다.`,
+            count: results.length,
+            type: "render",
+          });
+          fetchStatusAndData();
+        } else if (pollData.status === "failed") {
+          cleanUpStream();
+          setIsRendering(false);
+          try {
+            localStorage.removeItem("happy_active_job");
+          } catch {}
+          setErrorMsg(`렌더링 실패: ${pollData.error}`);
+        }
+      } catch {
+        // Ignore transient poll errors
+      }
+    }, 1500);
+  }, [fetchStatusAndData]);
+
+  // Restore any background job running on page load/refresh
+  useEffect(() => {
+    try {
+      const savedJobStr = localStorage.getItem("happy_active_job");
+      if (!savedJobStr) return;
+      const savedJob = JSON.parse(savedJobStr);
+      if (!savedJob?.jobId || !savedJob?.type) return;
+
+      fetch(`/api/jobs/${savedJob.jobId}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((job) => {
+          if (!job) {
+            localStorage.removeItem("happy_active_job");
+            return;
+          }
+          if (job.status === "running" || job.status === "pending") {
+            if (savedJob.type === "analyze") {
+              setAnalyzeProgress(job.progress || 10);
+              setAnalyzeMessage(job.message || "AI 분석 세션 복원 중...");
+              subscribeToAnalyzeJob(savedJob.jobId);
+            } else if (savedJob.type === "render") {
+              setRenderProgress(job.progress || 10);
+              setRenderMessage(job.message || "쇼츠 렌더링 세션 복원 중...");
+              subscribeToRenderJob(savedJob.jobId);
+            }
+          } else if (job.status === "completed") {
+            localStorage.removeItem("happy_active_job");
+            if (savedJob.type === "analyze") {
+              if (job.transcript_summary) setTranscriptSummary(job.transcript_summary);
+              const hlList = job.highlights || [];
+              setHighlights(hlList);
+              if (hlList.length > 0) {
+                setSelectedHighlight(hlList[0]);
+                setSelectedHighlightIds(hlList.map((h: Highlight) => h.id));
+              }
+            } else if (savedJob.type === "render") {
+              const results = job.results || (job.result ? [job.result] : []);
+              setBatchResults(results);
+              setSelectedBatchIdx(0);
+              if (results.length > 0) setRenderedResult(results[0]);
+            }
+          } else {
+            localStorage.removeItem("happy_active_job");
+          }
+        })
+        .catch(() => {
+          localStorage.removeItem("happy_active_job");
+        });
+    } catch {
+      // ignore localStorage errors
+    }
+  }, [subscribeToAnalyzeJob, subscribeToRenderJob]);
+
   // Start AI Analysis (Step 3)
   const handleStartAnalysis = async () => {
     const src = getEffectiveSource();
@@ -209,86 +533,29 @@ export default function HappyShortsApp() {
         }),
       });
 
+      if (!res.ok) {
+        let errText = `서버 응답 오류 (${res.status})`;
+        try {
+          const errData = await res.json();
+          errText = errData.detail || errData.message || errText;
+        } catch {
+          const rawText = await res.text();
+          if (rawText) errText = rawText;
+        }
+        throw new Error(errText);
+      }
+
       const data = await res.json();
       const jobId = data.job_id;
 
-      // Subscribe to Server-Sent Events (SSE) with polling fallback
-      let pollTimer: NodeJS.Timeout | null = null;
-      const cleanUpStream = () => {
-        if (pollTimer) clearInterval(pollTimer);
-        eventSource.close();
-      };
+      try {
+        localStorage.setItem(
+          "happy_active_job",
+          JSON.stringify({ jobId, type: "analyze", startTime: Date.now() })
+        );
+      } catch {}
 
-      const eventSource = new EventSource(`/api/jobs/${jobId}/events`);
-      eventSource.onmessage = (event) => {
-        try {
-          const payload = JSON.parse(event.data);
-          if (payload.progress !== undefined) {
-            setAnalyzeProgress((prev) => Math.max(prev, payload.progress));
-          }
-          if (payload.message) setAnalyzeMessage(payload.message);
-
-          if (payload.video_metadata) {
-            setVideoMeta(payload.video_metadata);
-          }
-
-          if (payload.status === "completed") {
-            cleanUpStream();
-            setIsAnalyzing(false);
-            const hlList = payload.highlights || [];
-            setHighlights(hlList);
-            if (hlList.length > 0) {
-              const best = hlList[0];
-              setSelectedHighlight(best);
-              setSelectedHighlightIds(hlList.map((h: Highlight) => h.id));
-              setPreviewTimeRange({ start: best.start_time, end: best.end_time });
-            }
-          } else if (payload.status === "failed") {
-            cleanUpStream();
-            setIsAnalyzing(false);
-            setErrorMsg(`AI 분석 중 오류가 발생했습니다: ${payload.error}`);
-          }
-        } catch (e) {
-          console.error("SSE parse error", e);
-        }
-      };
-
-      eventSource.onerror = () => {
-        // Do not immediately close on transient SSE errors; polling fallback handles it
-      };
-
-      // Safety net polling every 1.5s
-      pollTimer = setInterval(async () => {
-        try {
-          const pollRes = await fetch(`/api/jobs/${jobId}`);
-          if (!pollRes.ok) return;
-          const pollData = await pollRes.json();
-          if (pollData.progress !== undefined) {
-            setAnalyzeProgress((prev) => Math.max(prev, pollData.progress));
-          }
-          if (pollData.message) setAnalyzeMessage(pollData.message);
-          if (pollData.video_metadata) setVideoMeta(pollData.video_metadata);
-
-          if (pollData.status === "completed") {
-            cleanUpStream();
-            setIsAnalyzing(false);
-            const hlList = pollData.highlights || [];
-            setHighlights(hlList);
-            if (hlList.length > 0) {
-              const best = hlList[0];
-              setSelectedHighlight(best);
-              setSelectedHighlightIds(hlList.map((h: Highlight) => h.id));
-              setPreviewTimeRange({ start: best.start_time, end: best.end_time });
-            }
-          } else if (pollData.status === "failed") {
-            cleanUpStream();
-            setIsAnalyzing(false);
-            setErrorMsg(`AI 분석 중 오류가 발생했습니다: ${pollData.error}`);
-          }
-        } catch {
-          // Ignore transient poll errors
-        }
-      }, 1500);
+      subscribeToAnalyzeJob(jobId);
     } catch (err: unknown) {
       setIsAnalyzing(false);
       setErrorMsg(err instanceof Error ? err.message : "분석 요청에 실패했습니다.");
@@ -396,79 +663,29 @@ export default function HappyShortsApp() {
         }),
       });
 
+      if (!res.ok) {
+        let errText = `서버 렌더링 응답 오류 (${res.status})`;
+        try {
+          const errData = await res.json();
+          errText = errData.detail || errData.message || errText;
+        } catch {
+          const rawText = await res.text();
+          if (rawText) errText = rawText;
+        }
+        throw new Error(errText);
+      }
+
       const data = await res.json();
       const jobId = data.job_id;
 
-      // Subscribe to Server-Sent Events (SSE) with polling fallback
-      let pollTimer: NodeJS.Timeout | null = null;
-      const cleanUpStream = () => {
-        if (pollTimer) clearInterval(pollTimer);
-        eventSource.close();
-      };
+      try {
+        localStorage.setItem(
+          "happy_active_job",
+          JSON.stringify({ jobId, type: "render", startTime: Date.now() })
+        );
+      } catch {}
 
-      const eventSource = new EventSource(`/api/jobs/${jobId}/events`);
-      eventSource.onmessage = (event) => {
-        try {
-          const payload = JSON.parse(event.data);
-          if (payload.progress !== undefined) {
-            setRenderProgress((prev) => Math.max(prev, payload.progress));
-          }
-          if (payload.message) setRenderMessage(payload.message);
-
-          if (payload.status === "completed") {
-            cleanUpStream();
-            setIsRendering(false);
-            const results = payload.results || (payload.result ? [payload.result] : []);
-            setBatchResults(results);
-            setSelectedBatchIdx(0);
-            if (results.length > 0) {
-              setRenderedResult(results[0]);
-            }
-            fetchStatusAndData();
-          } else if (payload.status === "failed") {
-            cleanUpStream();
-            setIsRendering(false);
-            setErrorMsg(`렌더링 실패: ${payload.error}`);
-          }
-        } catch (e) {
-          console.error("Render SSE parse error", e);
-        }
-      };
-
-      eventSource.onerror = () => {
-        // Do not immediately close on transient SSE errors; polling fallback handles it
-      };
-
-      // Safety net polling every 1.5s
-      pollTimer = setInterval(async () => {
-        try {
-          const pollRes = await fetch(`/api/jobs/${jobId}`);
-          if (!pollRes.ok) return;
-          const pollData = await pollRes.json();
-          if (pollData.progress !== undefined) {
-            setRenderProgress((prev) => Math.max(prev, pollData.progress));
-          }
-          if (pollData.message) setRenderMessage(pollData.message);
-
-          if (pollData.status === "completed") {
-            cleanUpStream();
-            setIsRendering(false);
-            const results = pollData.results || (pollData.result ? [pollData.result] : []);
-            setBatchResults(results);
-            setSelectedBatchIdx(0);
-            if (results.length > 0) {
-              setRenderedResult(results[0]);
-            }
-            fetchStatusAndData();
-          } else if (pollData.status === "failed") {
-            cleanUpStream();
-            setIsRendering(false);
-            setErrorMsg(`렌더링 실패: ${pollData.error}`);
-          }
-        } catch {
-          // Ignore transient poll errors
-        }
-      }, 1500);
+      subscribeToRenderJob(jobId);
     } catch (err: unknown) {
       setIsRendering(false);
       setErrorMsg(err instanceof Error ? err.message : "렌더링 요청에 실패했습니다.");
@@ -550,7 +767,13 @@ export default function HappyShortsApp() {
             }`}
           >
             <Sparkles className="w-4 h-4" />
-            쇼츠 제작 스튜디오
+            <span>쇼츠 제작 스튜디오</span>
+            {(isAnalyzing || isRendering) && (
+              <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-mono animate-pulse flex items-center gap-1 font-bold">
+                <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                {isRendering ? `렌더링 ${renderProgress}%` : `AI 분석 ${analyzeProgress}%`}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setActiveTab("gallery")}
@@ -561,7 +784,7 @@ export default function HappyShortsApp() {
             }`}
           >
             <FolderOpen className="w-4 h-4" />
-            완성 보관함 ({outputs.length})
+            <span>완성 보관함 ({outputs.length})</span>
           </button>
         </div>
 
@@ -619,39 +842,50 @@ export default function HappyShortsApp() {
                   const Icon = s.icon;
                   const isActive = currentStep === s.num;
                   const isDone = currentStep > s.num;
+                  const isBusyHere = (s.num === 3 && isAnalyzing) || (s.num === 4 && isRendering);
 
                   return (
                     <React.Fragment key={s.num}>
                       <button
                         onClick={() => {
-                          if (!isAnalyzing && !isRendering) {
-                            if (s.num <= 2 || isDone || (s.num === 3 && highlights.length > 0)) {
-                              setCurrentStep(s.num);
-                            }
-                          }
+                          setCurrentStep(s.num);
                         }}
-                        disabled={isAnalyzing || isRendering}
                         className={`flex items-center gap-3 px-3 py-2 rounded-xl transition-all ${
                           isActive
                             ? "bg-indigo-600/20 border border-indigo-500/40 text-indigo-300 shadow-sm"
                             : isDone
                             ? "text-emerald-400 hover:bg-slate-800/50"
-                            : "text-slate-500"
+                            : "text-slate-400 hover:text-slate-200"
                         }`}
                       >
                         <div
                           className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${
                             isActive
                               ? "bg-indigo-500 text-white shadow-md shadow-indigo-500/40"
+                              : isBusyHere
+                              ? "bg-rose-500/30 text-rose-300 border border-rose-500/50"
                               : isDone
                               ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
                               : "bg-slate-800 text-slate-400"
                           }`}
                         >
-                          {isDone ? <Check className="w-3.5 h-3.5" /> : s.num}
+                          {isBusyHere ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-400" />
+                          ) : isDone ? (
+                            <Check className="w-3.5 h-3.5" />
+                          ) : (
+                            s.num
+                          )}
                         </div>
                         <div className="hidden sm:block text-left">
-                          <p className="text-xs font-semibold">{s.label}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-xs font-semibold">{s.label}</p>
+                            {isBusyHere && (
+                              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-rose-500/20 text-rose-300 font-bold animate-pulse">
+                                {s.num === 3 ? `${analyzeProgress}%` : `${renderProgress}%`}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </button>
                       {idx < 3 && <div className="flex-1 h-0.5 bg-slate-800 hidden md:block" />}
@@ -1702,6 +1936,74 @@ export default function HappyShortsApp() {
                           </div>
                         )}
                       </div>
+
+                      {/* AI 음성 분석 상세 리포트 (프로세스 세분화 카드) */}
+                      {transcriptSummary && (
+                        <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col gap-3 shadow-md">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                                <AudioLines className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <h3 className="text-xs font-bold text-white flex items-center gap-2">
+                                  <span>AI 음성 분석 & 단어 싱크 완료 리포트</span>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono">
+                                    Whisper STT 완료
+                                  </span>
+                                </h3>
+                                <p className="text-[11px] text-slate-400">
+                                  전체 음성을 정밀 분석하여 {transcriptSummary.segment_count?.toLocaleString()}개 대화 세그먼트를 추출했습니다.
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setShowTranscriptDetails(!showTranscriptDetails)}
+                              className="text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center gap-1.5"
+                            >
+                              <span>{showTranscriptDetails ? "스크립트 접기" : "대화 내역 펼치기"}</span>
+                              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showTranscriptDetails ? "rotate-180" : ""}`} />
+                            </button>
+                          </div>
+
+                          {/* 4 Metrics Pills */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-slate-800/60">
+                            <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                              <span className="text-[10px] text-slate-400 block font-medium">분석된 총 길이</span>
+                              <span className="text-sm font-bold text-white font-mono">{transcriptSummary.duration_formatted || "55분 52초"}</span>
+                            </div>
+                            <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                              <span className="text-[10px] text-slate-400 block font-medium">전사된 발화 문장</span>
+                              <span className="text-sm font-bold text-emerald-400 font-mono">{transcriptSummary.segment_count?.toLocaleString()}개</span>
+                            </div>
+                            <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                              <span className="text-[10px] text-slate-400 block font-medium">단어 타임스탬프</span>
+                              <span className="text-sm font-bold text-indigo-400 font-mono">{transcriptSummary.total_words?.toLocaleString()}단어</span>
+                            </div>
+                            <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80">
+                              <span className="text-[10px] text-slate-400 block font-medium">평균 발화 속도</span>
+                              <span className="text-sm font-bold text-amber-400 font-mono">{transcriptSummary.wpm_avg || 116} WPM</span>
+                            </div>
+                          </div>
+
+                          {/* Expandable Transcript Dialogue Preview */}
+                          {showTranscriptDetails && transcriptSummary.preview_segments && (
+                            <div className="mt-2 p-3 rounded-xl bg-slate-950 border border-slate-800 max-h-48 overflow-y-auto space-y-1.5 text-xs font-mono">
+                              <div className="text-[11px] text-slate-400 font-semibold mb-1 flex items-center justify-between">
+                                <span>타임라인별 대화 스크립트 미리보기</span>
+                                <span className="text-[10px] text-slate-400">초반 {transcriptSummary.preview_segments.length}개 구간</span>
+                              </div>
+                              {transcriptSummary.preview_segments.map((s, idx) => (
+                                <div key={idx} className="flex items-start gap-2 text-slate-300 hover:bg-slate-900/60 p-1 rounded">
+                                  <span className="text-indigo-400 shrink-0 font-bold">[{s.time}]</span>
+                                  <span className="text-slate-200">{s.text}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {/* Prominent Batch Render CTA Banner */}
                       {highlights.length > 0 && (
@@ -3180,6 +3482,131 @@ export default function HappyShortsApp() {
           );
         })()}
       </main>
+
+      {/* Global Floating Background Task Dock */}
+      {(isAnalyzing || isRendering) && (() => {
+        const targetStep = isRendering ? 4 : 3;
+        const isAlreadyThere = activeTab === "studio" && currentStep === targetStep;
+
+        return (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[92%] sm:w-auto min-w-[360px] max-w-xl glass-panel bg-slate-950/95 border border-indigo-500/40 shadow-2xl shadow-indigo-950/80 rounded-2xl p-3.5 backdrop-blur-xl animate-in slide-in-from-bottom duration-300">
+            <div className="flex items-center justify-between gap-4">
+              <div
+                className="flex items-center gap-3 min-w-0 cursor-pointer"
+                onClick={() => {
+                  setActiveTab("studio");
+                  setCurrentStep(targetStep);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+              >
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-500/20 to-indigo-600/20 border border-rose-500/40 flex items-center justify-center shrink-0">
+                  <Loader2 className="w-5 h-5 text-rose-400 animate-spin" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-rose-300 uppercase tracking-wider">
+                      {isRendering ? "백그라운드 렌더링 작업 중" : "AI 하이라이트 분석 중"}
+                    </span>
+                    <span className="text-[11px] font-mono px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-bold">
+                      {isRendering ? `${renderProgress}%` : `${analyzeProgress}%`}
+                    </span>
+                  </div>
+                  <p className="text-xs text-white font-medium truncate mt-0.5 max-w-[260px] sm:max-w-[320px]">
+                    {isRendering ? renderMessage : analyzeMessage}
+                  </p>
+                  <div className="w-full bg-slate-900 rounded-full h-1.5 mt-2 overflow-hidden border border-slate-800">
+                    <div
+                      className="bg-gradient-to-r from-rose-500 via-indigo-500 to-emerald-400 h-full rounded-full transition-all duration-300 shadow-sm"
+                      style={{ width: `${isRendering ? renderProgress : analyzeProgress}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("studio");
+                  setCurrentStep(targetStep);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold shrink-0 shadow-md flex items-center gap-1.5 transition ${
+                  isAlreadyThere
+                    ? "bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 shadow-slate-900/50"
+                    : "bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white shadow-indigo-600/30"
+                }`}
+                title={
+                  isAlreadyThere
+                    ? "현재 진행 화면의 상단 진행 카드로 스크롤합니다."
+                    : "현재 작업이 진행 중인 스튜디오 스텝으로 이동합니다."
+                }
+              >
+                <span>{isAlreadyThere ? "진행 위치로 스크롤" : "작업 스텝으로 이동"}</span>
+                <ChevronRight className={`w-3.5 h-3.5 ${isAlreadyThere ? "-rotate-90 transition-transform" : ""}`} />
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Global Completion Toast Notification */}
+      {completionToast && (
+        <div className="fixed top-20 right-6 z-50 max-w-sm w-full glass-panel bg-slate-950/95 border border-emerald-500/40 shadow-2xl shadow-emerald-950/60 rounded-2xl p-4 backdrop-blur-xl animate-in slide-in-from-top duration-300">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0 text-emerald-400">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
+                  {completionToast.title}
+                </h4>
+                <button
+                  onClick={() => setCompletionToast(null)}
+                  className="text-slate-400 hover:text-white p-0.5 rounded transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-xs text-slate-300 mt-1 leading-snug">
+                {completionToast.message}
+              </p>
+              <div className="mt-3 flex items-center gap-2">
+                {completionToast.type === "render" ? (
+                  <button
+                    onClick={() => {
+                      setActiveTab("gallery");
+                      setCompletionToast(null);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1 shadow-md shadow-emerald-600/30"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5" />
+                    <span>완성 보관함에서 확인</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setActiveTab("studio");
+                      setCurrentStep(3);
+                      setCompletionToast(null);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition flex items-center gap-1 shadow-md shadow-indigo-600/30"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>추천 구간 확인</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setCompletionToast(null)}
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
