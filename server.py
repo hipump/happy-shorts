@@ -23,6 +23,7 @@ from src.transcriber import transcribe_video
 from src.highlighter import detect_highlights
 from src.renderer import render_short
 from src.pipeline import generate_youtube_metadata_file, sanitize_filename, get_unique_output_paths
+from src.thumbnail import generate_creator_thumbnail, extract_thumbnail_candidates, generate_pro_thumbnail
 
 app = FastAPI(
     title="Happy Shorts AI Studio API",
@@ -44,15 +45,18 @@ BASE_DIR = Path(__file__).resolve().parent
 DOWNLOADS_DIR = BASE_DIR / "downloads"
 OUTPUT_DIR = BASE_DIR / "output"
 ASSETS_DIR = BASE_DIR / "assets"
+TEMP_DIR = BASE_DIR / "temp"
 
 DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 # Mount static media directories
 app.mount("/media/downloads", StaticFiles(directory=str(DOWNLOADS_DIR)), name="downloads")
 app.mount("/media/output", StaticFiles(directory=str(OUTPUT_DIR)), name="output")
 app.mount("/media/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
+app.mount("/media/temp", StaticFiles(directory=str(TEMP_DIR)), name="temp")
 
 # In-memory job state & event queues
 jobs: Dict[str, Dict[str, Any]] = {}
@@ -110,7 +114,89 @@ class RenderRequest(BaseModel):
     seamless_loop: bool = Field(default=True, description="무한 반복 시청을 위한 오디오 마이크로 크로스페이드")
     target_filename: Optional[str] = None
 
+class ThumbnailRenderRequest(BaseModel):
+    video_path: str
+    output_cover_path: Optional[str] = None
+    title: str = ""
+    hook_text: str = ""
+    badge_type: str = "warning"
+    badge_label: Optional[str] = None
+    headline_style: str = "yellow_on_black"
+    punchline_style: str = "white_on_black"
+    aspect_ratio: str = "9:16"
+    source_video_path: Optional[str] = None
+    start_time: Optional[float] = None
+    duration: Optional[float] = None
+    target_time: Optional[float] = None
+
 # Endpoints
+@app.get("/api/thumbnail/candidates")
+async def get_thumbnail_candidates(
+    video_path: str,
+    source_video_path: Optional[str] = None,
+    start_time: float = 0.0,
+    duration: float = 30.0,
+    count: int = 4
+):
+    """Extracts multiple candidate face-centered 9:16 frames for the user to choose from."""
+    loop = asyncio.get_event_loop()
+    try:
+        candidates = await loop.run_in_executor(
+            None,
+            lambda: extract_thumbnail_candidates(
+                video_path=video_path,
+                source_video_path=source_video_path,
+                start_time=start_time,
+                duration=duration,
+                count=count
+            )
+        )
+        return {"candidates": candidates}
+    except Exception as e:
+        print(f"[API] Candidate extraction error: {e}")
+        return {"candidates": [], "error": str(e)}
+
+@app.post("/api/thumbnail/render")
+async def render_custom_thumbnail(req: ThumbnailRenderRequest):
+    """Renders high-impact creator-grade thumbnail with user-selected frame and text."""
+    loop = asyncio.get_event_loop()
+    out_cover = req.output_cover_path
+    if not out_cover:
+        vp = Path(req.video_path)
+        cov_name = vp.name.replace("short_", "cover_").replace(".mp4", ".jpg")
+        out_cover = str(OUTPUT_DIR / cov_name)
+
+    try:
+        saved_path = await loop.run_in_executor(
+            None,
+            lambda: generate_creator_thumbnail(
+                video_path=req.video_path,
+                output_cover_path=out_cover,
+                title=req.title,
+                hook_text=req.hook_text,
+                badge_type=req.badge_type,
+                badge_label=req.badge_label,
+                headline_style=req.headline_style,
+                punchline_style=req.punchline_style,
+                aspect_ratio=req.aspect_ratio,
+                source_video_path=req.source_video_path,
+                start_time=req.start_time,
+                duration=req.duration,
+                target_time=req.target_time,
+            )
+        )
+        cover_name = Path(saved_path).name
+        import time
+        cover_url = f"/media/output/{cover_name}?t={int(time.time())}"
+        return {
+            "success": True,
+            "cover_path": saved_path,
+            "cover_url": cover_url
+        }
+    except Exception as e:
+        print(f"[API] Custom thumbnail render error: {e}")
+        return {"success": False, "error": str(e)}
+
 @app.get("/api/audio-presets")
 def list_audio_presets():
     """Returns available BGM tracks and SFX capabilities."""
@@ -688,17 +774,34 @@ async def run_render_task(job_id: str, req: RenderRequest):
             if out_txt_path.exists():
                 seo_content = out_txt_path.read_text(encoding="utf-8")
 
-            # Extract high-res cover thumbnail
+            # Generate creator-grade thumbnail with full-bleed face crop and solid backplates
             try:
                 await loop.run_in_executor(
                     None,
-                    lambda o_p=str(out_path), c_p=str(cover_path): subprocess.run([
-                        "ffmpeg", "-y", "-ss", "00:00:01.5", "-i", o_p,
-                        "-vframes", "1", "-q:v", "2", c_p
-                    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                    lambda o_p=str(out_path), c_p=str(cover_path), h=h_obj, m=metadata, ar=req.aspect_ratio: generate_creator_thumbnail(
+                        video_path=o_p,
+                        output_cover_path=c_p,
+                        title=h.title,
+                        hook_text=h.hook_text,
+                        badge_type="warning" if h.virality_score and h.virality_score >= 85 else "tip",
+                        badge_label="긴급 대처법" if h.virality_score and h.virality_score >= 85 else "핵심 꿀팁",
+                        headline_style="yellow_on_black",
+                        punchline_style="white_on_black",
+                        aspect_ratio=ar,
+                        source_video_path=str(m.local_path) if m and m.local_path else None,
+                        start_time=h.start_time,
+                        duration=h.duration,
+                    )
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[Server] Pro thumbnail error, falling back to ffmpeg: {e}")
+                try:
+                    subprocess.run([
+                        "ffmpeg", "-y", "-ss", "00:00:01.5", "-i", str(out_path),
+                        "-vframes", "1", "-q:v", "2", str(cover_path)
+                    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                except Exception:
+                    pass
 
             cover_url = f"/media/output/{cover_path.name}" if cover_path.exists() else None
 

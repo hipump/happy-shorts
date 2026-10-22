@@ -13,6 +13,7 @@ from src.downloader import prepare_source
 from src.transcriber import transcribe_video
 from src.highlighter import detect_highlights
 from src.renderer import render_short
+from src.thumbnail import generate_pro_thumbnail
 
 console = Console()
 OUTPUT_DIR = Path("output")
@@ -387,14 +388,32 @@ class ShortsPipeline:
                     )
                 console.print(f"  [bold green]✔ 쇼츠 생성 완료:[/bold green] {output_path}")
 
-            # Extract high-res cover thumbnail
+            # Extract high-res viral pro thumbnail
             try:
-                subprocess.run([
-                    "ffmpeg", "-y", "-ss", "00:00:01.5", "-i", output_path,
-                    "-vframes", "1", "-q:v", "2", cover_path
-                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-            except Exception:
-                pass
+                generate_pro_thumbnail(
+                    video_path=output_path,
+                    output_cover_path=cover_path,
+                    title=h.title,
+                    hook_text=h.hook_text,
+                    badge_type="warning" if h.virality_score and h.virality_score >= 85 else "tip",
+                    badge_label="긴급 대처법" if h.virality_score and h.virality_score >= 85 else "핵심 꿀팁",
+                    headline_style="yellow_on_black",
+                    punchline_style="white_on_black",
+                    aspect_ratio=self.aspect_ratio,
+                    source_video_path=str(metadata.local_path) if metadata and metadata.local_path else None,
+                    start_time=h.start_time,
+                    duration=h.duration,
+                    virality_score=h.virality_score,
+                )
+            except Exception as e:
+                console.print(f"  [yellow]⚠ 프로 썸네일 생성 실패, 기본 캡처로 대체: {e}[/yellow]")
+                try:
+                    subprocess.run([
+                        "ffmpeg", "-y", "-ss", "00:00:01.5", "-i", output_path,
+                        "-vframes", "1", "-q:v", "2", cover_path
+                    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                except Exception:
+                    pass
 
             # Generate YouTube SEO Metadata Package
             generate_youtube_metadata_file(meta_txt_path, h, metadata, output_path)

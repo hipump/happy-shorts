@@ -46,6 +46,9 @@ import {
   Smartphone,
   Target,
   Infinity,
+  Image as ImageIcon,
+  AlertTriangle,
+  Lightbulb,
 } from "lucide-react";
 import {
   Template,
@@ -143,6 +146,123 @@ export default function HappyShortsApp() {
   const [galleryFilter, setGalleryFilter] = useState<"all" | "9:16" | "16:9">("all");
   const [gallerySearch, setGallerySearch] = useState<string>("");
   const [previewModalOutput, setPreviewModalOutput] = useState<RenderedOutput | null>(null);
+
+  // Thumbnail Studio Editor state
+  const [thumbEditorOpen, setThumbEditorOpen] = useState(false);
+  const [thumbTargetOutput, setThumbTargetOutput] = useState<RenderedOutput | null>(null);
+  const [thumbCandidates, setThumbCandidates] = useState<
+    Array<{
+      index: number;
+      timestamp: number;
+      offset_sec: number;
+      file_path: string;
+      preview_url: string;
+    }>
+  >([]);
+  const [selectedCandidateIdx, setSelectedCandidateIdx] = useState<number>(0);
+  const [thumbTitle, setThumbTitle] = useState("");
+  const [thumbHook, setThumbHook] = useState("");
+  const [thumbBadgeType, setThumbBadgeType] = useState<"warning" | "tip" | "fact" | "none">("warning");
+  const [thumbBadgeLabel, setThumbBadgeLabel] = useState("긴급 대처법");
+  const [thumbHeadlineStyle, setThumbHeadlineStyle] = useState<
+    "yellow_on_black" | "black_on_yellow" | "white_on_red" | "white_on_black"
+  >("yellow_on_black");
+  const [thumbPunchlineStyle, setThumbPunchlineStyle] = useState<
+    "white_on_black" | "yellow_on_black" | "black_on_yellow"
+  >("white_on_black");
+  const [thumbIsLoadingCandidates, setThumbIsLoadingCandidates] = useState(false);
+  const [thumbIsRendering, setThumbIsRendering] = useState(false);
+  const [thumbLivePreviewUrl, setThumbLivePreviewUrl] = useState<string | null>(null);
+
+  const openThumbnailEditor = async (out: RenderedOutput) => {
+    setThumbTargetOutput(out);
+    const cleanT = (out.title || out.filename.replace("short_", "").replace(/\.[^/.]+$/, ""))
+      .split("#")[0]
+      .trim();
+    const cleanH = (out.hook_text || "모르면 100% 갇힙니다").split("#")[0].trim();
+    setThumbTitle(cleanT.slice(0, 16));
+    setThumbHook(cleanH.slice(0, 16));
+    setThumbBadgeType(out.virality_score && out.virality_score >= 85 ? "warning" : "tip");
+    setThumbBadgeLabel(out.virality_score && out.virality_score >= 85 ? "긴급 대처법" : "핵심 꿀팁");
+    setThumbHeadlineStyle("yellow_on_black");
+    setThumbPunchlineStyle("white_on_black");
+    setThumbLivePreviewUrl(out.cover_url || null);
+    setSelectedCandidateIdx(0);
+    setThumbEditorOpen(true);
+
+    // Fetch candidate frames from video
+    setThumbIsLoadingCandidates(true);
+    try {
+      const q = new URLSearchParams({
+        video_path: out.filepath,
+        duration: String(out.duration || 30),
+        count: "4",
+      });
+      const res = await fetch(`/api/thumbnail/candidates?${q.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.candidates && data.candidates.length > 0) {
+          setThumbCandidates(data.candidates);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load thumbnail candidates:", e);
+    } finally {
+      setThumbIsLoadingCandidates(false);
+    }
+  };
+
+  const handleRenderThumbnail = async (targetIdx?: number) => {
+    if (!thumbTargetOutput) return;
+    const activeIdx = targetIdx !== undefined ? targetIdx : selectedCandidateIdx;
+    const cand = thumbCandidates[activeIdx];
+    const targetTime = cand ? cand.timestamp : undefined;
+
+    setThumbIsRendering(true);
+    try {
+      const payload = {
+        video_path: thumbTargetOutput.filepath,
+        title: thumbTitle,
+        hook_text: thumbHook,
+        badge_type: thumbBadgeType,
+        badge_label: thumbBadgeLabel,
+        headline_style: thumbHeadlineStyle,
+        punchline_style: thumbPunchlineStyle,
+        aspect_ratio: thumbTargetOutput.aspect_ratio || "9:16",
+        target_time: targetTime,
+      };
+
+      const res = await fetch("/api/thumbnail/render", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.cover_url) {
+          setThumbLivePreviewUrl(data.cover_url);
+          // Sync with output card and preview modal
+          setOutputs((prev) =>
+            prev.map((o) =>
+              o.filename === thumbTargetOutput.filename
+                ? { ...o, cover_url: data.cover_url }
+                : o
+            )
+          );
+          setPreviewModalOutput((prev) =>
+            prev && prev.filename === thumbTargetOutput.filename
+              ? { ...prev, cover_url: data.cover_url }
+              : prev
+          );
+        }
+      }
+    } catch (e) {
+      console.error("Thumbnail render error:", e);
+    } finally {
+      setThumbIsRendering(false);
+    }
+  };
 
   // Background Task Persistence & Notification state
   const [completionToast, setCompletionToast] = useState<{
@@ -3161,6 +3281,25 @@ export default function HappyShortsApp() {
                               <Download className="w-3.5 h-3.5" />
                             </a>
 
+                            {out.cover_url && (
+                              <a
+                                href={out.cover_url}
+                                download={`cover_${out.filename.replace(/\.mp4$/i, ".jpg")}`}
+                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-slate-700 transition"
+                                title="고화질 프로 썸네일(JPG) 다운로드"
+                              >
+                                <ImageIcon className="w-3.5 h-3.5" />
+                              </a>
+                            )}
+
+                            <button
+                              onClick={() => openThumbnailEditor(out)}
+                              className="p-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 transition"
+                              title="🎨 썸네일 맞춤 스튜디오"
+                            >
+                              <Palette className="w-3.5 h-3.5" />
+                            </button>
+
                             {out.seo_content && (
                               <button
                                 onClick={() => copyToClipboard(out.seo_content || "", out.filename)}
@@ -3308,8 +3447,29 @@ export default function HappyShortsApp() {
                               className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-1.5 transition"
                             >
                               <Download className="w-3.5 h-3.5" />
-                              다운로드
+                              영상 다운로드
                             </a>
+
+                            {out.cover_url && (
+                              <a
+                                href={out.cover_url}
+                                download={`cover_${out.filename.replace(/\.mp4$/i, ".jpg")}`}
+                                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-slate-700 text-xs font-bold flex items-center gap-1.5 transition"
+                                title="고화질 프로 썸네일(JPG) 다운로드"
+                              >
+                                <ImageIcon className="w-3.5 h-3.5" />
+                                썸네일 (JPG)
+                              </a>
+                            )}
+
+                            <button
+                              onClick={() => openThumbnailEditor(out)}
+                              className="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-bold flex items-center gap-1.5 transition"
+                              title="🎨 썸네일 맞춤 스튜디오"
+                            >
+                              <Palette className="w-3.5 h-3.5" />
+                              썸네일 편집
+                            </button>
 
                             {out.seo_content && (
                               <button
@@ -3472,6 +3632,310 @@ export default function HappyShortsApp() {
                             <Download className="w-4 h-4" />
                             MP4 파일 다운로드 ({previewModalOutput.size_mb} MB)
                           </a>
+
+                          {previewModalOutput.cover_url && (
+                            <a
+                              href={previewModalOutput.cover_url}
+                              download={`cover_${previewModalOutput.filename.replace(/\.mp4$/i, ".jpg")}`}
+                              className="px-4 py-3 rounded-xl bg-slate-850 hover:bg-slate-800 text-amber-300 hover:text-amber-200 border border-amber-500/30 font-bold text-xs flex items-center justify-center gap-2 shadow-md transition"
+                              title="고화질 프로 썸네일(JPG) 다운로드"
+                            >
+                              <ImageIcon className="w-4 h-4 text-amber-400" />
+                              썸네일 저장 (JPG)
+                            </a>
+                          )}
+
+                          <button
+                            onClick={() => openThumbnailEditor(previewModalOutput)}
+                            className="px-4 py-3 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition"
+                            title="🎨 썸네일 맞춤 스튜디오"
+                          >
+                            <Palette className="w-4 h-4" />
+                            썸네일 맞춤 편집
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ========================================================================= */}
+              {/* 🎨 Creator-Grade Thumbnail Studio Modal */}
+              {/* ========================================================================= */}
+              {thumbEditorOpen && thumbTargetOutput && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+                  <div className="glass-panel bg-slate-950/95 border border-indigo-500/40 rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+                    {/* Modal Header */}
+                    <div className="p-4 sm:px-6 border-b border-slate-800 flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center">
+                          <Palette className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h3 className="font-extrabold text-sm sm:text-base text-white flex items-center gap-2">
+                            유튜브 1티어 썸네일 맞춤 스튜디오
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
+                              100% 로컬 고화질 9:16
+                            </span>
+                          </h3>
+                          <p className="text-xs text-slate-400">
+                            안면 인식 9:16 풀스크린 크롭 & 고대비 백플레이트 타이포 (이모지 없음)
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setThumbEditorOpen(false)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    {/* Modal Content: 2-column layout */}
+                    <div className="p-4 sm:p-6 overflow-y-auto flex-1 grid grid-cols-1 md:grid-cols-12 gap-6">
+                      {/* Left Column: 9:16 Live Preview (5 cols) */}
+                      <div className="md:col-span-5 flex flex-col items-center gap-3">
+                        <div className="text-xs font-bold text-slate-300 self-start flex items-center gap-1.5">
+                          <Smartphone className="w-3.5 h-3.5 text-indigo-400" />
+                          실시간 9:16 썸네일 미리보기
+                        </div>
+                        <div className="relative w-full max-w-[260px] aspect-[9/16] rounded-xl overflow-hidden border-2 border-indigo-500/30 shadow-2xl bg-slate-900 group">
+                          {thumbLivePreviewUrl ? (
+                            <img
+                              src={thumbLivePreviewUrl}
+                              alt="썸네일 미리보기"
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs">
+                              미리보기 로딩 중...
+                            </div>
+                          )}
+
+                          {thumbIsRendering && (
+                            <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex flex-col items-center justify-center gap-2 text-white text-xs font-bold">
+                              <Loader2 className="w-6 h-6 animate-spin text-indigo-400" />
+                              <span>썸네일 렌더링 중...</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Quick Actions under preview */}
+                        <div className="w-full max-w-[260px] flex flex-col gap-2 pt-1">
+                          <button
+                            onClick={() => handleRenderThumbnail()}
+                            disabled={thumbIsRendering}
+                            className="w-full py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md transition"
+                          >
+                            {thumbIsRendering ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <RefreshCw className="w-3.5 h-3.5" />
+                            )}
+                            변경사항 실시간 반영
+                          </button>
+
+                          {thumbLivePreviewUrl && (
+                            <a
+                              href={thumbLivePreviewUrl}
+                              download={`thumbnail_${thumbTargetOutput.filename.replace(/\.mp4$/i, ".jpg")}`}
+                              className="w-full py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              고화질 JPG 다운로드
+                            </a>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right Column: Customization Controls (7 cols) */}
+                      <div className="md:col-span-7 flex flex-col gap-5">
+                        {/* 1. Best Face Frame Picker */}
+                        <div>
+                          <label className="text-xs font-bold text-slate-300 block mb-2 flex items-center justify-between">
+                            <span className="flex items-center gap-1.5">
+                              <Target className="w-3.5 h-3.5 text-rose-400" />
+                              1. 인물 표정 베스트 컷 선택
+                            </span>
+                            {thumbIsLoadingCandidates && (
+                              <span className="text-[11px] text-indigo-400 flex items-center gap-1">
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                프레임 분석 중...
+                              </span>
+                            )}
+                          </label>
+
+                          {thumbCandidates.length > 0 ? (
+                            <div className="grid grid-cols-4 gap-2">
+                              {thumbCandidates.map((cand, idx) => (
+                                <div
+                                  key={cand.index}
+                                  onClick={() => {
+                                    setSelectedCandidateIdx(idx);
+                                    handleRenderThumbnail(idx);
+                                  }}
+                                  className={`relative cursor-pointer rounded-lg overflow-hidden border-2 aspect-[9/16] transition-all transform hover:scale-105 ${
+                                    selectedCandidateIdx === idx
+                                      ? "border-indigo-500 ring-2 ring-indigo-500/50 shadow-md"
+                                      : "border-slate-800 hover:border-slate-600 opacity-70 hover:opacity-100"
+                                  }`}
+                                >
+                                  <img
+                                    src={cand.preview_url}
+                                    alt={`후보 ${idx + 1}`}
+                                    className="w-full h-full object-cover"
+                                  />
+                                  <div className="absolute bottom-0 inset-x-0 bg-black/70 py-0.5 text-center text-[9px] font-bold text-slate-200">
+                                    {cand.offset_sec}초
+                                  </div>
+                                  {selectedCandidateIdx === idx && (
+                                    <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-indigo-600 text-white flex items-center justify-center">
+                                      <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-500 py-2">
+                              후보 프레임을 추출하는 중이거나 영상 기본 프레임을 사용합니다.
+                            </p>
+                          )}
+                        </div>
+
+                        {/* 2. Top Vector Badge (NO EMOJIS) */}
+                        <div>
+                          <label className="text-xs font-bold text-slate-300 block mb-2 flex items-center gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                            2. 상단 벡터 뱃지 심볼 (이모지 없음)
+                          </label>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+                            {[
+                              { type: "warning", label: "긴급 대처법", icon: AlertTriangle, color: "text-rose-400" },
+                              { type: "tip", label: "핵심 꿀팁", icon: Lightbulb, color: "text-amber-400" },
+                              { type: "fact", label: "팩트 체크", icon: ShieldCheck, color: "text-sky-400" },
+                              { type: "none", label: "뱃지 없음", icon: X, color: "text-slate-400" },
+                            ].map((b) => {
+                              const IconComponent = b.icon;
+                              const isSelected = thumbBadgeType === b.type;
+                              return (
+                                <button
+                                  key={b.type}
+                                  type="button"
+                                  onClick={() => {
+                                    setThumbBadgeType(b.type as any);
+                                    if (b.type !== "none") setThumbBadgeLabel(b.label);
+                                  }}
+                                  className={`py-2 px-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+                                    isSelected
+                                      ? "bg-slate-800 border-indigo-500 text-white shadow-sm"
+                                      : "bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200"
+                                  }`}
+                                >
+                                  <IconComponent className={`w-3.5 h-3.5 ${b.color}`} />
+                                  <span>{b.label.split(" ")[0]}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {thumbBadgeType !== "none" && (
+                            <input
+                              type="text"
+                              value={thumbBadgeLabel}
+                              onChange={(e) => setThumbBadgeLabel(e.target.value)}
+                              placeholder="뱃지 문구 입력"
+                              maxLength={10}
+                              className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
+                            />
+                          )}
+                        </div>
+
+                        {/* 3. Headline & Punchline Typography */}
+                        <div className="space-y-3">
+                          <label className="text-xs font-bold text-slate-300 block flex items-center gap-1.5">
+                            <Type className="w-3.5 h-3.5 text-indigo-400" />
+                            3. 고대비 백플레이트 문구 수정
+                          </label>
+
+                          <div>
+                            <span className="text-[11px] text-slate-400 mb-1 block">
+                              상단 메인 헤드라인 (최대 16자)
+                            </span>
+                            <input
+                              type="text"
+                              value={thumbTitle}
+                              onChange={(e) => setThumbTitle(e.target.value)}
+                              placeholder="예: 3초 만에 문 여는 법"
+                              maxLength={18}
+                              className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-bold transition"
+                            />
+                          </div>
+
+                          <div>
+                            <span className="text-[11px] text-slate-400 mb-1 block">
+                              하단 강조 펀치라인 (원색 자막 완벽 커버, 최대 16자)
+                            </span>
+                            <input
+                              type="text"
+                              value={thumbHook}
+                              onChange={(e) => setThumbHook(e.target.value)}
+                              placeholder="예: 모르면 100% 갇힙니다"
+                              maxLength={18}
+                              className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-bold transition"
+                            />
+                          </div>
+                        </div>
+
+                        {/* 4. Color Style Preset */}
+                        <div>
+                          <label className="text-xs font-bold text-slate-300 block mb-2 flex items-center gap-1.5">
+                            <Palette className="w-3.5 h-3.5 text-purple-400" />
+                            4. 타이포 컬러 스타일
+                          </label>
+                          <div className="grid grid-cols-3 gap-2">
+                            {[
+                              { id: "yellow_on_black", name: "🟡 옐로우 바", desc: "검정 박스 + 네온 옐로우" },
+                              { id: "black_on_yellow", name: "⚡ 반전 형광 바", desc: "형광 옐로우 + 블랙" },
+                              { id: "white_on_red", name: "🔴 경고 레드 바", desc: "레드 박스 + 화이트" },
+                            ].map((s) => (
+                              <button
+                                key={s.id}
+                                type="button"
+                                onClick={() => setThumbHeadlineStyle(s.id as any)}
+                                className={`py-2 px-2.5 rounded-xl border text-left transition ${
+                                  thumbHeadlineStyle === s.id
+                                    ? "bg-slate-800 border-indigo-500 text-white shadow-sm"
+                                    : "bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200"
+                                }`}
+                              >
+                                <div className="text-xs font-bold text-white">{s.name}</div>
+                                <div className="text-[10px] text-slate-500 truncate">{s.desc}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Apply Final Button */}
+                        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => setThumbEditorOpen(false)}
+                            className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition"
+                          >
+                            닫기
+                          </button>
+                          <button
+                            onClick={async () => {
+                              await handleRenderThumbnail();
+                              setThumbEditorOpen(false);
+                            }}
+                            disabled={thumbIsRendering}
+                            className="py-2.5 px-5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg transition"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                            대표 썸네일로 확정 적용
+                          </button>
                         </div>
                       </div>
                     </div>
