@@ -23,7 +23,7 @@ from src.transcriber import transcribe_video
 from src.highlighter import detect_highlights
 from src.renderer import render_short
 from src.pipeline import generate_youtube_metadata_file, sanitize_filename, get_unique_output_paths
-from src.thumbnail import generate_creator_thumbnail, extract_thumbnail_candidates, generate_pro_thumbnail
+from src.thumbnail import generate_creator_thumbnail, extract_thumbnail_candidates, generate_pro_thumbnail, TYPOGRAPHY_PRESETS
 
 app = FastAPI(
     title="Happy Shorts AI Studio API",
@@ -128,8 +128,14 @@ class ThumbnailRenderRequest(BaseModel):
     start_time: Optional[float] = None
     duration: Optional[float] = None
     target_time: Optional[float] = None
+    style_preset: Optional[str] = "auto"
 
 # Endpoints
+@app.get("/api/thumbnail/presets")
+async def get_thumbnail_presets():
+    """Returns available stylized image font presets for thumbnails."""
+    return {"presets": list(TYPOGRAPHY_PRESETS.values())}
+
 @app.get("/api/thumbnail/candidates")
 async def get_thumbnail_candidates(
     video_path: str,
@@ -183,6 +189,7 @@ async def render_custom_thumbnail(req: ThumbnailRenderRequest):
                 start_time=req.start_time,
                 duration=req.duration,
                 target_time=req.target_time,
+                style_preset=req.style_preset,
             )
         )
         cover_name = Path(saved_path).name

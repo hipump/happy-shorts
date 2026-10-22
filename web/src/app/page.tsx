@@ -170,6 +170,7 @@ export default function HappyShortsApp() {
   const [thumbPunchlineStyle, setThumbPunchlineStyle] = useState<
     "white_on_black" | "yellow_on_black" | "black_on_yellow"
   >("white_on_black");
+  const [thumbStylePreset, setThumbStylePreset] = useState<string>("auto");
   const [thumbIsLoadingCandidates, setThumbIsLoadingCandidates] = useState(false);
   const [thumbIsRendering, setThumbIsRendering] = useState(false);
   const [thumbLivePreviewUrl, setThumbLivePreviewUrl] = useState<string | null>(null);
@@ -186,6 +187,7 @@ export default function HappyShortsApp() {
     setThumbBadgeLabel(out.virality_score && out.virality_score >= 85 ? "긴급 대처법" : "핵심 꿀팁");
     setThumbHeadlineStyle("yellow_on_black");
     setThumbPunchlineStyle("white_on_black");
+    setThumbStylePreset("auto");
     setThumbLivePreviewUrl(out.cover_url || null);
     setSelectedCandidateIdx(0);
     setThumbEditorOpen(true);
@@ -212,11 +214,12 @@ export default function HappyShortsApp() {
     }
   };
 
-  const handleRenderThumbnail = async (targetIdx?: number) => {
+  const handleRenderThumbnail = async (targetIdx?: number, presetOverride?: string) => {
     if (!thumbTargetOutput) return;
     const activeIdx = targetIdx !== undefined ? targetIdx : selectedCandidateIdx;
     const cand = thumbCandidates[activeIdx];
     const targetTime = cand ? cand.timestamp : undefined;
+    const activePreset = presetOverride !== undefined ? presetOverride : thumbStylePreset;
 
     setThumbIsRendering(true);
     try {
@@ -230,6 +233,7 @@ export default function HappyShortsApp() {
         punchline_style: thumbPunchlineStyle,
         aspect_ratio: thumbTargetOutput.aspect_ratio || "9:16",
         target_time: targetTime,
+        style_preset: activePreset,
       };
 
       const res = await fetch("/api/thumbnail/render", {
@@ -3888,30 +3892,49 @@ export default function HappyShortsApp() {
                           </div>
                         </div>
 
-                        {/* 4. Color Style Preset */}
+                        {/* 4. Multi-Genre Image Font & Shader Presets */}
                         <div>
-                          <label className="text-xs font-bold text-slate-300 block mb-2 flex items-center gap-1.5">
-                            <Palette className="w-3.5 h-3.5 text-purple-400" />
-                            4. 타이포 컬러 스타일
+                          <label className="text-xs font-bold text-slate-300 block mb-2 flex items-center justify-between">
+                            <span className="flex items-center gap-1.5">
+                              <Palette className="w-3.5 h-3.5 text-purple-400" />
+                              4. 이미지 폰트 & 그래픽 셰이더 프리셋 (8종)
+                            </span>
+                            <span className="text-[10px] text-indigo-400 font-medium">
+                              클릭 즉시 실시간 렌더링
+                            </span>
                           </label>
-                          <div className="grid grid-cols-3 gap-2">
+                          <div className="grid grid-cols-3 gap-2 max-h-52 overflow-y-auto pr-1">
                             {[
-                              { id: "yellow_on_black", name: "🟡 옐로우 바", desc: "검정 박스 + 네온 옐로우" },
-                              { id: "black_on_yellow", name: "⚡ 반전 형광 바", desc: "형광 옐로우 + 블랙" },
-                              { id: "white_on_red", name: "🔴 경고 레드 바", desc: "레드 박스 + 화이트" },
+                              { id: "auto", name: "🤖 AI 자동 분석", desc: "내용 기반 최적 폰트", tag: "스마트" },
+                              { id: "blockbuster_3d", name: "🎬 3D 블록버스터", desc: "BlackHanSans • 루비 메탈", tag: "이슈/바이럴" },
+                              { id: "jelly_pop", name: "🍩 젤리 버블 팝", desc: "BagelFat • 3중 테두리", tag: "맛집/먹방/일상" },
+                              { id: "cyber_neon", name: "⚡ 각진 사이버 네온", desc: "GasoekOne • 시안 튜브 발광", tag: "테크/AI/IT" },
+                              { id: "gold_luxury", name: "👑 골드 럭셔리", desc: "DoHyeon • 24K 순금 & 다이아", tag: "주식/코인/부자" },
+                              { id: "ink_splatter", name: "🩸 거친 잉크 캘리", desc: "EastSeaDokdo • 붓터치 핏빛", tag: "재난/격투/실화" },
+                              { id: "spooky_ghost", name: "👻 스푸키 고스트", desc: "KirangHaerang • 심령 글로우", tag: "괴담/공포/미스터리" },
+                              { id: "variety_show", name: "📺 예능 버라이어티", desc: "Jua • TV 예능 옐로우 박스", tag: "예능/썰/코미디" },
+                              { id: "washi_vlog", name: "🌿 감성 마스킹 테이프", desc: "NanumPen • 아날로그 손글씨", tag: "브이로그/여행" },
                             ].map((s) => (
                               <button
                                 key={s.id}
                                 type="button"
-                                onClick={() => setThumbHeadlineStyle(s.id as any)}
-                                className={`py-2 px-2.5 rounded-xl border text-left transition ${
-                                  thumbHeadlineStyle === s.id
-                                    ? "bg-slate-800 border-indigo-500 text-white shadow-sm"
-                                    : "bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200"
+                                onClick={() => {
+                                  setThumbStylePreset(s.id);
+                                  handleRenderThumbnail(selectedCandidateIdx, s.id);
+                                }}
+                                className={`p-2 rounded-xl border text-left transition flex flex-col justify-between ${
+                                  thumbStylePreset === s.id
+                                    ? "bg-slate-800 border-indigo-500 text-white shadow-md ring-2 ring-indigo-500/50"
+                                    : "bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700"
                                 }`}
                               >
-                                <div className="text-xs font-bold text-white">{s.name}</div>
-                                <div className="text-[10px] text-slate-500 truncate">{s.desc}</div>
+                                <div>
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="text-[11px] font-bold text-white truncate">{s.name}</span>
+                                    <span className="text-[9px] px-1 py-0.2 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 whitespace-nowrap">{s.tag}</span>
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 truncate mt-1">{s.desc}</div>
+                                </div>
                               </button>
                             ))}
                           </div>

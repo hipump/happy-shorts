@@ -54,6 +54,122 @@ def get_thumbnail_font(size: int, prefer_black_han: bool = True) -> ImageFont.Fr
                 continue
     return ImageFont.load_default()
 
+def get_preset_font(filename: str, size: int) -> ImageFont.FreeTypeFont:
+    """Loads a specific font from assets/fonts/ with graceful fallback."""
+    fp = FONT_DIR / filename
+    if fp.exists():
+        try:
+            return ImageFont.truetype(str(fp), int(size))
+        except Exception:
+            pass
+    return get_thumbnail_font(int(size))
+
+# ==============================================================================
+# YouTube Master Typography 8-Presets Suite
+# Each preset defines a unique font, graphic shaders, strokes, and color palette
+# ==============================================================================
+TYPOGRAPHY_PRESETS: Dict[str, Dict] = {
+    "blockbuster_3d": {
+        "id": "blockbuster_3d",
+        "name": "3D 돌출 & 베벨 메탈",
+        "category": "정통 이슈/바이럴/충격",
+        "font_file": "BlackHanSans-Regular.ttf",
+        "font_size_mult": 1.0,
+        "tilt": -3.5,
+        "banner_style": "slash",
+        "banner_color": (195, 12, 25),
+        "rim_color": (255, 215, 0),
+        "p_colors": [(255, 230, 50), (255, 140, 20), (255, 255, 200)],
+        "style1": "ruby_gloss",
+        "style2": "concrete_weathered",
+    },
+    "jelly_pop": {
+        "id": "jelly_pop",
+        "name": "젤리 버블 팝 스티커",
+        "category": "맛집/먹방/일상/디저트",
+        "font_file": "BagelFatOne-Regular.ttf",
+        "font_size_mult": 0.95,
+        "tilt": 2.5,
+        "banner_style": "soft_pill",
+        "banner_color": (255, 105, 180),
+        "rim_color": (255, 150, 200),
+        "p_colors": [(255, 120, 180), (255, 225, 50), (255, 255, 255)],
+    },
+    "ink_splatter": {
+        "id": "ink_splatter",
+        "name": "거친 캘리 잉크 스플래터",
+        "category": "재난/격투/실화/사고",
+        "font_file": "EastSeaDokdo-Regular.ttf",
+        "font_size_mult": 1.35,
+        "tilt": -2.5,
+        "banner_style": "slash",
+        "banner_color": (180, 10, 25),
+        "rim_color": (60, 200, 255),
+        "p_colors": [(220, 20, 30), (160, 10, 20), (255, 200, 200)],
+    },
+    "cyber_neon": {
+        "id": "cyber_neon",
+        "name": "각진 메탈 & 네온 튜브",
+        "category": "테크/자동차/AI/IT",
+        "font_file": "GasoekOne-Regular.ttf",
+        "font_size_mult": 0.95,
+        "tilt": 3.0,
+        "banner_style": "cyber_lines",
+        "banner_color": (10, 35, 80),
+        "rim_color": (0, 235, 255),
+        "p_colors": [(0, 240, 255), (60, 150, 255), (220, 250, 255)],
+    },
+    "gold_luxury": {
+        "id": "gold_luxury",
+        "name": "골드 럭셔리 엠보싱",
+        "category": "주식/코인/재테크/부자",
+        "font_file": "DoHyeon-Regular.ttf",
+        "font_size_mult": 1.0,
+        "tilt": 2.0,
+        "banner_style": "slash",
+        "banner_color": (15, 18, 25),
+        "rim_color": (255, 215, 0),
+        "p_colors": [(255, 215, 0), (255, 245, 180), (255, 255, 255)],
+    },
+    "spooky_ghost": {
+        "id": "spooky_ghost",
+        "name": "오싹한 스푸키 고스트",
+        "category": "괴담/공포/미스터리/심령",
+        "font_file": "KirangHaerang-Regular.ttf",
+        "font_size_mult": 1.25,
+        "tilt": -3.5,
+        "banner_style": "shadow_smoke",
+        "banner_color": (15, 30, 20),
+        "rim_color": (50, 255, 120),
+        "p_colors": [(50, 255, 120), (180, 255, 210), (240, 70, 70)],
+    },
+    "variety_show": {
+        "id": "variety_show",
+        "name": "방송 예능 버라이어티",
+        "category": "예능/썰/코미디/인터뷰",
+        "font_file": "Jua-Regular.ttf",
+        "font_size_mult": 0.98,
+        "tilt": 1.5,
+        "banner_style": "plates",
+        "banner_color": (240, 140, 10),
+        "rim_color": (255, 235, 20),
+        "p_colors": [(255, 220, 30), (255, 160, 20), (255, 255, 255)],
+    },
+    "washi_vlog": {
+        "id": "washi_vlog",
+        "name": "감성 테이프 손글씨",
+        "category": "감성 브이로그/여행/힐링",
+        "font_file": "NanumPenScript-Regular.ttf",
+        "font_size_mult": 1.30,
+        "tilt": -1.5,
+        "banner_style": "washi_tape",
+        "banner_color": (60, 50, 45),
+        "rim_color": (255, 210, 140),
+        "p_colors": [(255, 240, 210), (255, 200, 150), (240, 220, 190)],
+    },
+}
+
+
 def parse_blockbuster_phrases(title: str, hook_text: str) -> Tuple[str, str]:
     """
     Extracts 2 high-impact, punchy phrases from title and hook without repetition.
@@ -150,9 +266,17 @@ def render_graphic_text_block(
             r = int(255 * (1.0 - ratio * 0.55))
             g = int(65 * (1.0 - ratio * 0.9))
             b = int(65 * (1.0 - ratio * 0.8))
+        elif style == "cyber_cyan":
+            r = int(0 + ratio * 30)
+            g = int(235 - ratio * 90)
+            b = int(255 - ratio * 20)
+        elif style == "warm_sunset":
+            r = int(255 - ratio * 10)
+            g = int(150 - ratio * 80)
+            b = int(40 + ratio * 30)
         elif style == "gold_gloss":
-            r = int(255 - ratio * 35)
-            g = int(235 - ratio * 110)
+            r = int(255 - ratio * 30)
+            g = int(235 - ratio * 105)
             b = int(20 + ratio * 10)
         else:  # concrete_weathered
             val = int(252 - ratio * 55)
@@ -236,19 +360,386 @@ def draw_grunge_slash_banner(
 
     return banner.filter(ImageFilter.GaussianBlur(1.2))
 
-def add_atmospheric_fx(canvas_rgba: Image.Image, banner_y1: int) -> Image.Image:
+def detect_content_mood(title: str, hook_text: str = "") -> Dict:
     """
-    Adds cinematic floating ember sparks and warm light rays.
+    Analyzes video title and hook semantics to dynamically select the best typography preset:
+    - spooky_ghost: horror, ghost, mystery, abandoned
+    - ink_splatter: flood, disaster, fight, accident, real story
+    - cyber_neon: AI, Tesla, Apple, EV, tech, coding, gadgets
+    - gold_luxury: bitcoin, stock, crypto, money, wealth, luxury
+    - jelly_pop: food, mukbang, cafe, bagel, dessert, recipe
+    - washi_vlog: vlog, travel, healing, jeju, alone, quiet
+    - variety_show: talk, confession, comedy, funny, secret, dating
+    - blockbuster_3d: default high-CTR shock, viral, warning
+    """
+    text = f"{title} {hook_text}".lower()
+
+    # 1. Horror / Ghost / Mystery
+    if any(k in text for k in ["괴담", "공포", "흉가", "미스터리", "심령", "폐병원", "귀신", "악마", "저주", "오싹", "무서운", "심야"]):
+        return TYPOGRAPHY_PRESETS["spooky_ghost"]
+
+    # 2. Disaster / Blood / Combat / Emergency
+    if any(k in text for k in ["폭우", "침수", "방전", "긴급", "위험", "경고", "사망", "체포", "폭망", "파산", "화재", "사고", "실화", "탈출", "생존", "갇힘", "고립", "대피", "비상", "격투", "살인"]):
+        return TYPOGRAPHY_PRESETS["ink_splatter"]
+
+    # 3. Stock / Crypto / Wealth / Finance
+    if any(k in text for k in ["주식", "코인", "비트코인", "이더리움", "10억", "재테크", "부자", "월급", "수익", "투자", "명품", "연봉", "슈퍼카", "매출", "상승", "폭등"]):
+        return TYPOGRAPHY_PRESETS["gold_luxury"]
+
+    # 4. Tech / AI / Cyber / Gadgets
+    if any(k in text for k in ["스마트폰", "ai", "테슬라", "애플", "전기차", "로봇", "반도체", "미래", "과학", "팁", "꿀팁", "알고리즘", "세팅", "기능", "업데이트", "아이폰", "갤럭시", "컴퓨터", "비전프로", "chatgpt", "출시", "개발", "코딩"]):
+        return TYPOGRAPHY_PRESETS["cyber_neon"]
+
+    # 5. Food / Mukbang / Cafe / Dessert
+    if any(k in text for k in ["맛집", "베이글", "카페", "요리", "먹방", "디저트", "빵", "존맛", "케이크", "식당", "레시피", "꿀조합", "고기", "치킨", "라면"]):
+        return TYPOGRAPHY_PRESETS["jelly_pop"]
+
+    # 6. Vlog / Travel / Healing
+    if any(k in text for k in ["브이로그", "여행", "힐링", "제주", "혼자", "감성", "다이어리", "산책", "숙소", "조용한", "호캉스", "휴식"]):
+        return TYPOGRAPHY_PRESETS["washi_vlog"]
+
+    # 7. Variety Show / Talk / Comedy / Dating
+    if any(k in text for k in ["썰", "고백", "비밀", "코미디", "폭소", "개그", "웃긴", "친구", "연애", "환승", "남친", "여친", "인터뷰", "충격 고백"]):
+        return TYPOGRAPHY_PRESETS["variety_show"]
+
+    # 8. Default High-CTR Viral Blockbuster
+    return TYPOGRAPHY_PRESETS["blockbuster_3d"]
+
+def draw_preset_banner(
+    w: int,
+    h: int,
+    by1: int,
+    by2: int,
+    preset: Dict,
+    aspect_ratio: str = "9:16"
+) -> Image.Image:
+    """
+    Renders a style-matched background banner for the typography preset:
+    - slash: organic distressed torn banner with splatter
+    - cyber_lines: dark cyber banner with neon laser borders
+    - shadow_smoke: dark eerie smoke fog
+    - soft_pill: gentle dark plate with pastel neon halo
+    - plates / washi_tape: clean soft vignette (label plates provide contrast)
+    """
+    style = preset.get("banner_style", "slash")
+    color = preset.get("banner_color", (195, 12, 25))
+
+    if style == "slash":
+        offset = 45 if aspect_ratio == "9:16" else 30
+        return draw_grunge_slash_banner(w, h, by1, by2, color=color, angle_offset=offset)
+
+    banner = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    bdraw = ImageDraw.Draw(banner)
+
+    if style == "cyber_lines":
+        pad_y = 30
+        bdraw.rectangle([(0, by1 - pad_y), (w, by2 + pad_y)], fill=(*color, 230))
+        rim = preset.get("rim_color", (0, 235, 255))
+        bdraw.line([(0, by1 - pad_y), (w, by1 - pad_y)], fill=(*rim, 240), width=4)
+        bdraw.line([(0, by2 + pad_y), (w, by2 + pad_y)], fill=(*rim, 240), width=4)
+        return banner.filter(ImageFilter.GaussianBlur(1.0))
+
+    elif style == "shadow_smoke":
+        for y in range(max(0, by1 - 100), min(h, by2 + 120)):
+            factor = 1.0 - abs(y - (by1 + by2) // 2) / ((by2 - by1) // 2 + 100)
+            alpha = int(240 * max(0.0, factor))
+            bdraw.line([(0, y), (w, y)], fill=(*color, alpha))
+        return banner.filter(ImageFilter.GaussianBlur(12.0))
+
+    elif style == "soft_pill":
+        pad_x = 40
+        bdraw.rounded_rectangle(
+            [pad_x, by1 - 20, w - pad_x, by2 + 30],
+            radius=32,
+            fill=(18, 16, 22, 220),
+            outline=(*color, 180),
+            width=3
+        )
+        return banner.filter(ImageFilter.GaussianBlur(2.0))
+
+    else:  # plates or washi_tape (soft shadow backing for maximum readability)
+        for y in range(max(0, by1 - 40), min(h, by2 + 60)):
+            factor = 1.0 - abs(y - (by1 + by2) // 2) / ((by2 - by1) // 2 + 50)
+            alpha = int(140 * max(0.0, factor))
+            bdraw.line([(0, y), (w, y)], fill=(10, 10, 14, alpha))
+        return banner.filter(ImageFilter.GaussianBlur(16.0))
+
+def render_preset_typography(
+    txt_canvas: Image.Image,
+    part1: str,
+    part2: str,
+    preset: Dict,
+    aspect_ratio: str = "9:16"
+):
+    """
+    Renders professional creator typography tailored to the selected preset.
+    Supports all 8 distinct image font styles with custom shaders and plate geometry.
+    """
+    p_id = preset.get("id", "blockbuster_3d")
+    font_file = preset.get("font_file", "BlackHanSans-Regular.ttf")
+    mult = preset.get("font_size_mult", 1.0)
+
+    if aspect_ratio == "16:9":
+        base_s1, base_s2 = int(92 * mult), int(82 * mult)
+    else:
+        base_s1, base_s2 = int(125 * mult), int(115 * mult)
+
+    font1 = get_preset_font(font_file, base_s1)
+    font2 = get_preset_font(font_file, base_s2)
+
+    cw, ch = txt_canvas.size
+    tdraw = ImageDraw.Draw(txt_canvas)
+
+    # 1. 3D Blockbuster
+    if p_id == "blockbuster_3d":
+        style1 = preset.get("style1", "ruby_gloss")
+        style2 = preset.get("style2", "concrete_weathered")
+        if aspect_ratio == "16:9":
+            bb1 = tdraw.textbbox((0, 0), part1, font=font1)
+            w1 = bb1[2] - bb1[0]
+            bb2 = tdraw.textbbox((0, 0), f" {part2}", font=font2)
+            w2 = bb2[2] - bb2[0]
+            sx = (cw - (w1 + w2)) // 2
+            sy = 70
+            render_graphic_text_block(txt_canvas, part1, font1, sx, sy, style=style1, depth=18, inner_stroke_color=(255, 255, 255))
+            render_graphic_text_block(txt_canvas, f" {part2}", font2, sx + w1 + 10, sy, style=style2, depth=18, inner_stroke_color=(20, 20, 20))
+        else:
+            bb1 = tdraw.textbbox((0, 0), part1, font=font1)
+            sx1 = (cw - (bb1[2] - bb1[0])) // 2
+            render_graphic_text_block(txt_canvas, part1, font1, sx1, 40, style=style1, depth=22, inner_stroke_color=(255, 255, 255))
+            bb2 = tdraw.textbbox((0, 0), part2, font=font2)
+            sx2 = (cw - (bb2[2] - bb2[0])) // 2
+            render_graphic_text_block(txt_canvas, part2, font2, sx2, 220, style=style2, depth=22, inner_stroke_color=(20, 20, 20))
+
+    # 2. Jelly Pop Bubble Sticker (BagelFatOne)
+    elif p_id == "jelly_pop":
+        def draw_jelly_line(x, y, text, f, fill_color):
+            tdraw.text((x, y), text, font=f, fill=(20, 15, 25), stroke_width=20, stroke_fill=(20, 15, 25))
+            tdraw.text((x, y), text, font=f, fill=(255, 255, 255), stroke_width=12, stroke_fill=(255, 255, 255))
+            tdraw.text((x, y), text, font=f, fill=fill_color)
+
+        if aspect_ratio == "16:9":
+            bb1 = tdraw.textbbox((0, 0), part1, font=font1)
+            w1 = bb1[2] - bb1[0]
+            bb2 = tdraw.textbbox((0, 0), f" {part2}", font=font2)
+            w2 = bb2[2] - bb2[0]
+            sx = (cw - (w1 + w2)) // 2
+            draw_jelly_line(sx, 70, part1, font1, (255, 65, 130))
+            draw_jelly_line(sx + w1 + 15, 70, f" {part2}", font2, (255, 220, 0))
+        else:
+            bb1 = tdraw.textbbox((0, 0), part1, font=font1)
+            sx1 = (cw - (bb1[2] - bb1[0])) // 2
+            draw_jelly_line(sx1, 40, part1, font1, (255, 65, 130))
+            bb2 = tdraw.textbbox((0, 0), part2, font=font2)
+            sx2 = (cw - (bb2[2] - bb2[0])) // 2
+            draw_jelly_line(sx2, 220, part2, font2, (255, 220, 0))
+
+    # 3. Ink Splatter Calligraphy (EastSeaDokdo)
+    elif p_id == "ink_splatter":
+        def draw_ink_line(x, y, text, f, fill_color, stroke_col=(0, 0, 0)):
+            tdraw.text((x, y), text, font=f, fill=stroke_col, stroke_width=16, stroke_fill=stroke_col)
+            tdraw.text((x, y), text, font=f, fill=(255, 255, 255), stroke_width=6, stroke_fill=(255, 255, 255))
+            tdraw.text((x, y), text, font=f, fill=fill_color)
+
+        if aspect_ratio == "16:9":
+            bb1 = tdraw.textbbox((0, 0), part1, font=font1)
+            w1 = bb1[2] - bb1[0]
+            bb2 = tdraw.textbbox((0, 0), f" {part2}", font=font2)
+            w2 = bb2[2] - bb2[0]
+            sx = (cw - (w1 + w2)) // 2
+            draw_ink_line(sx, 60, part1, font1, (230, 20, 30))
+            draw_ink_line(sx + w1 + 15, 60, f" {part2}", font2, (240, 240, 240))
+        else:
+            bb1 = tdraw.textbbox((0, 0), part1, font=font1)
+            sx1 = (cw - (bb1[2] - bb1[0])) // 2
+            draw_ink_line(sx1, 30, part1, font1, (230, 20, 30))
+            bb2 = tdraw.textbbox((0, 0), part2, font=font2)
+            sx2 = (cw - (bb2[2] - bb2[0])) // 2
+            draw_ink_line(sx2, 220, part2, font2, (240, 240, 240))
+
+        # Dynamic Splatter Drops around text
+        random.seed(77)
+        for _ in range(60):
+            ix = random.randint(100, cw - 100)
+            iy = random.randint(20, ch - 40)
+            ir = random.randint(2, 6)
+            tdraw.ellipse([ix - ir, iy - ir, ix + ir, iy + ir], fill=(180, 10, 20, random.randint(180, 255)))
+
+    # 4. Cyber Neon Tube (GasoekOne)
+    elif p_id == "cyber_neon":
+        glow_layer = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
+        gdraw = ImageDraw.Draw(glow_layer)
+
+        if aspect_ratio == "16:9":
+            bb1 = tdraw.textbbox((0, 0), part1, font=font1)
+            w1 = bb1[2] - bb1[0]
+            bb2 = tdraw.textbbox((0, 0), f" {part2}", font=font2)
+            w2 = bb2[2] - bb2[0]
+            sx = (cw - (w1 + w2)) // 2
+            gdraw.text((sx, 65), part1, font=font1, fill=(0, 230, 255, 255), stroke_width=18, stroke_fill=(0, 230, 255, 255))
+            glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(12))
+            txt_canvas.paste(glow_layer, (0, 0), glow_layer)
+
+            tdraw.text((sx, 65), part1, font=font1, fill=(255, 255, 255), stroke_width=8, stroke_fill=(10, 30, 60))
+            tdraw.text((sx, 65), part1, font=font1, fill=(0, 245, 255))
+
+            tdraw.text((sx + w1 + 15, 65), f" {part2}", font=font2, fill=(0, 0, 0), stroke_width=12, stroke_fill=(0, 0, 0))
+            tdraw.text((sx + w1 + 15, 65), f" {part2}", font=font2, fill=(235, 245, 255))
+        else:
+            bb1 = tdraw.textbbox((0, 0), part1, font=font1)
+            sx1 = (cw - (bb1[2] - bb1[0])) // 2
+            gdraw.text((sx1, 40), part1, font=font1, fill=(0, 230, 255, 255), stroke_width=20, stroke_fill=(0, 230, 255, 255))
+            glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(14))
+            txt_canvas.paste(glow_layer, (0, 0), glow_layer)
+
+            tdraw.text((sx1, 40), part1, font=font1, fill=(255, 255, 255), stroke_width=8, stroke_fill=(10, 30, 60))
+            tdraw.text((sx1, 40), part1, font=font1, fill=(0, 245, 255))
+
+            bb2 = tdraw.textbbox((0, 0), part2, font=font2)
+            sx2 = (cw - (bb2[2] - bb2[0])) // 2
+            tdraw.text((sx2, 220), part2, font=font2, fill=(0, 0, 0), stroke_width=14, stroke_fill=(0, 0, 0))
+            tdraw.text((sx2, 220), part2, font=font2, fill=(235, 245, 255))
+
+    # 5. Gold Luxury Emboss (DoHyeon)
+    elif p_id == "gold_luxury":
+        def draw_gold_line(x, y, text, f, is_gold=True):
+            tdraw.text((x, y), text, font=f, fill=(0, 0, 0), stroke_width=16, stroke_fill=(0, 0, 0))
+            if is_gold:
+                tdraw.text((x, y), text, font=f, fill=(255, 240, 160), stroke_width=8, stroke_fill=(180, 130, 20))
+                tdraw.text((x, y), text, font=f, fill=(255, 215, 0))
+            else:
+                tdraw.text((x, y), text, font=f, fill=(255, 255, 255))
+
+        if aspect_ratio == "16:9":
+            bb1 = tdraw.textbbox((0, 0), part1, font=font1)
+            w1 = bb1[2] - bb1[0]
+            bb2 = tdraw.textbbox((0, 0), f" {part2}", font=font2)
+            w2 = bb2[2] - bb2[0]
+            sx = (cw - (w1 + w2)) // 2
+            draw_gold_line(sx, 70, part1, font1, is_gold=True)
+            draw_gold_line(sx + w1 + 15, 70, f" {part2}", font2, is_gold=False)
+        else:
+            bb1 = tdraw.textbbox((0, 0), part1, font=font1)
+            sx1 = (cw - (bb1[2] - bb1[0])) // 2
+            draw_gold_line(sx1, 40, part1, font1, is_gold=True)
+            bb2 = tdraw.textbbox((0, 0), part2, font=font2)
+            sx2 = (cw - (bb2[2] - bb2[0])) // 2
+            draw_gold_line(sx2, 220, part2, font2, is_gold=False)
+
+            # Sparkle glints
+            for gx, gy in [(sx1 + 30, 50), (sx1 + (bb1[2] - bb1[0]) - 30, 60), (sx2 + 50, 235)]:
+                tdraw.line([(gx - 10, gy), (gx + 10, gy)], fill=(255, 255, 255), width=3)
+                tdraw.line([(gx, gy - 10), (gx, gy + 10)], fill=(255, 255, 255), width=3)
+                tdraw.ellipse([gx - 4, gy - 4, gx + 4, gy + 4], fill=(255, 255, 255))
+
+    # 6. Spooky Ghost Ectoplasm (KirangHaerang)
+    elif p_id == "spooky_ghost":
+        glow_layer = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
+        gdraw = ImageDraw.Draw(glow_layer)
+
+        if aspect_ratio == "16:9":
+            bb1 = tdraw.textbbox((0, 0), part1, font=font1)
+            w1 = bb1[2] - bb1[0]
+            bb2 = tdraw.textbbox((0, 0), f" {part2}", font=font2)
+            w2 = bb2[2] - bb2[0]
+            sx = (cw - (w1 + w2)) // 2
+            gdraw.text((sx, 55), part1, font=font1, fill=(50, 255, 120, 255), stroke_width=20, stroke_fill=(50, 255, 120, 255))
+            glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(16))
+            txt_canvas.paste(glow_layer, (0, 0), glow_layer)
+
+            tdraw.text((sx, 55), part1, font=font1, fill=(0, 0, 0), stroke_width=12, stroke_fill=(0, 0, 0))
+            tdraw.text((sx, 55), part1, font=font1, fill=(180, 255, 210))
+
+            tdraw.text((sx + w1 + 15, 55), f" {part2}", font=font2, fill=(0, 0, 0), stroke_width=14, stroke_fill=(0, 0, 0))
+            tdraw.text((sx + w1 + 15, 55), f" {part2}", font=font2, fill=(240, 80, 80))
+        else:
+            bb1 = tdraw.textbbox((0, 0), part1, font=font1)
+            sx1 = (cw - (bb1[2] - bb1[0])) // 2
+            gdraw.text((sx1, 25), part1, font=font1, fill=(50, 255, 120, 255), stroke_width=22, stroke_fill=(50, 255, 120, 255))
+            glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(16))
+            txt_canvas.paste(glow_layer, (0, 0), glow_layer)
+
+            tdraw.text((sx1, 25), part1, font=font1, fill=(0, 0, 0), stroke_width=12, stroke_fill=(0, 0, 0))
+            tdraw.text((sx1, 25), part1, font=font1, fill=(180, 255, 210))
+
+            bb2 = tdraw.textbbox((0, 0), part2, font=font2)
+            sx2 = (cw - (bb2[2] - bb2[0])) // 2
+            tdraw.text((sx2, 210), part2, font=font2, fill=(0, 0, 0), stroke_width=14, stroke_fill=(0, 0, 0))
+            tdraw.text((sx2, 210), part2, font=font2, fill=(240, 80, 80))
+
+    # 7. Variety Show Television Caption Plates (Jua)
+    elif p_id == "variety_show":
+        if aspect_ratio == "16:9":
+            bb1 = tdraw.textbbox((0, 0), part1, font=font1)
+            w1 = bb1[2] - bb1[0]
+            bb2 = tdraw.textbbox((0, 0), f" {part2}", font=font2)
+            w2 = bb2[2] - bb2[0]
+            sx = (cw - (w1 + w2 + 60)) // 2
+
+            tdraw.rounded_rectangle([sx, 60, sx + w1 + 24, 150], radius=14, fill=(255, 225, 0), outline=(20, 20, 20), width=4)
+            tdraw.text((sx + 12, 68), part1, font=font1, fill=(20, 20, 20))
+
+            tdraw.rounded_rectangle([sx + w1 + 35, 60, sx + w1 + w2 + 55, 150], radius=14, fill=(20, 20, 20), outline=(255, 255, 255), width=3)
+            tdraw.text((sx + w1 + 45, 68), f" {part2}", font=font2, fill=(255, 255, 255))
+        else:
+            bb1 = tdraw.textbbox((0, 0), part1, font=font1)
+            w1 = bb1[2] - bb1[0]
+            sx1 = (cw - (w1 + 36)) // 2
+            tdraw.rounded_rectangle([sx1, 40, sx1 + w1 + 36, 175], radius=18, fill=(255, 225, 0), outline=(20, 20, 20), width=5)
+            tdraw.text((sx1 + 18, 52), part1, font=font1, fill=(20, 20, 20))
+
+            bb2 = tdraw.textbbox((0, 0), part2, font=font2)
+            w2 = bb2[2] - bb2[0]
+            sx2 = (cw - (w2 + 36)) // 2
+            tdraw.rounded_rectangle([sx2, 220, sx2 + w2 + 36, 350], radius=18, fill=(20, 20, 20), outline=(255, 255, 255), width=4)
+            tdraw.text((sx2 + 18, 230), part2, font=font2, fill=(255, 255, 255))
+
+    # 8. Washi Vlog Masking Tape (NanumPenScript)
+    elif p_id == "washi_vlog":
+        if aspect_ratio == "16:9":
+            bb1 = tdraw.textbbox((0, 0), part1, font=font1)
+            w1 = bb1[2] - bb1[0]
+            bb2 = tdraw.textbbox((0, 0), f" {part2}", font=font2)
+            w2 = bb2[2] - bb2[0]
+            sx = (cw - (w1 + w2 + 50)) // 2
+
+            tdraw.rounded_rectangle([sx, 55, sx + w1 + 25, 155], radius=8, fill=(255, 245, 225, 240), outline=(220, 200, 180), width=2)
+            tdraw.text((sx + 12, 52), part1, font=font1, fill=(45, 40, 35))
+
+            tdraw.rounded_rectangle([sx + w1 + 35, 55, sx + w1 + w2 + 55, 155], radius=8, fill=(40, 35, 30, 230), outline=(180, 160, 140), width=2)
+            tdraw.text((sx + w1 + 45, 52), f" {part2}", font=font2, fill=(255, 248, 235))
+        else:
+            bb1 = tdraw.textbbox((0, 0), part1, font=font1)
+            w1 = bb1[2] - bb1[0]
+            sx1 = (cw - (w1 + 40)) // 2
+            tdraw.rounded_rectangle([sx1, 35, sx1 + w1 + 40, 175], radius=10, fill=(255, 245, 225, 240), outline=(220, 200, 180), width=3)
+            tdraw.text((sx1 + 20, 32), part1, font=font1, fill=(45, 40, 35))
+
+            bb2 = tdraw.textbbox((0, 0), part2, font=font2)
+            w2 = bb2[2] - bb2[0]
+            sx2 = (cw - (w2 + 40)) // 2
+            tdraw.rounded_rectangle([sx2, 220, sx2 + w2 + 40, 360], radius=10, fill=(40, 35, 30, 230), outline=(180, 160, 140), width=3)
+            tdraw.text((sx2 + 20, 215), part2, font=font2, fill=(255, 248, 235))
+
+
+def add_atmospheric_fx(
+    canvas_rgba: Image.Image,
+    banner_y1: int,
+    p_colors: Optional[List[Tuple[int, int, int]]] = None
+) -> Image.Image:
+    """
+    Adds cinematic floating sparks/particles matching the content theme.
     """
     w, h = canvas_rgba.size
     embers = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     edraw = ImageDraw.Draw(embers)
     random.seed(42)
-    for _ in range(60):
+    colors = p_colors or [(255, 205, 50), (255, 125, 30), (255, 60, 20), (255, 255, 220)]
+    for _ in range(70):
         ex = random.randint(0, w)
         ey = random.randint(max(0, banner_y1 - 120), h - 80)
-        er = random.randint(2, 5)
-        col = random.choice([(255, 205, 50), (255, 125, 30), (255, 60, 20), (255, 255, 220)])
+        er = random.randint(2, 6)
+        col = random.choice(colors)
         edraw.ellipse([ex - er, ey - er, ex + er, ey + er], fill=(*col, random.randint(180, 255)))
     embers = embers.filter(ImageFilter.GaussianBlur(1.0))
     return Image.alpha_composite(canvas_rgba, embers)
@@ -440,14 +931,18 @@ def generate_creator_thumbnail(
     target_time: Optional[float] = None,
     virality_score: Optional[int] = None,
     ai_bg_path: Optional[str] = None,
+    style_preset: Optional[str] = None,
     **kwargs,
 ) -> str:
     """
-    3D Blockbuster Viral Thumbnail Renderer:
-    - 3-Layer Architecture:
-      1. Cinematic background (AI or graded bokeh video frame)
-      2. Automated subject cutout (u2net) with multi-layer neon rim glow
-      3. 3D Extruded Blockbuster Typography with -3.5° dynamic slant & red splatter banner
+    3D Blockbuster & Stylized Image-Font Viral Thumbnail Engine:
+    - 4-Layer Architecture:
+      1. Layer 1: Cinematic bokeh background (AI-generated or graded video frame with vignette)
+      2. Layer 2: Subject Cutout (rembg u2net) with Multi-Layer Neon Rim Glow matching preset
+      3. Layer 3: Preset-tailored Banner / Backplate (Slash splatter, Cyber neon lines, Eerie fog, etc.)
+      4. Layer 4: Multi-Style Graphic Typography (8 distinct presets: Jelly Pop, Calli Ink, Cyber Neon,
+         3D Blockbuster, 24K Gold Luxury, Spooky Ghost, TV Variety Show, Washi Vlog)
+    - 100% Local Apple Silicon, sub-second inference.
     - Saves 1080x1920 (9:16) or 1280x720 (16:9) high-CTR JPEG.
     """
     out_p = Path(output_cover_path)
@@ -480,7 +975,6 @@ def generate_creator_thumbnail(
     cap.set(cv2.CAP_PROP_POS_FRAMES, int(sample_time * fps))
     ret, frame = cap.read()
     if not ret or frame is None:
-        # Fallback to frame 0
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
         ret, frame = cap.read()
     cap.release()
@@ -493,7 +987,6 @@ def generate_creator_thumbnail(
     # 3. Create Layer 1: Background
     if ai_bg_path and Path(ai_bg_path).exists():
         ai_bg = Image.open(ai_bg_path).convert("RGBA").resize((target_w, target_h), Image.Resampling.LANCZOS)
-        # Apply slight contrast enhance and lower vignette
         canvas = ImageEnhance.Contrast(ai_bg).enhance(1.15)
         vignette = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
         vdraw = ImageDraw.Draw(vignette)
@@ -505,11 +998,21 @@ def generate_creator_thumbnail(
     else:
         canvas = create_cinematic_bg(raw_frame_rgb, target_w, target_h)
 
-    # 4. Create Layer 2: Subject Cutout & Rim Light
+    # 4. Resolve Typography Preset (Explicit user selection or AI content analysis)
+    if style_preset and style_preset in TYPOGRAPHY_PRESETS:
+        preset = TYPOGRAPHY_PRESETS[style_preset]
+    else:
+        preset = detect_content_mood(title, hook_text)
+
+    # Subtle mood wash
+    banner_color = preset.get("banner_color", (195, 12, 25))
+    wash = Image.new("RGBA", (target_w, target_h), (*banner_color, 35))
+    canvas = Image.alpha_composite(canvas, wash)
+
+    # 5. Create Layer 2: Subject Cutout & Themed Rim Light
     cutout = extract_subject_cutout(raw_frame_rgb)
     if cutout is not None:
         if aspect_ratio == "16:9":
-            # In 16:9, scale subject to 65% height, align to right-center
             scale = (target_h * 0.90) / cutout.height
             nw = int(cutout.width * scale)
             nh = int(cutout.height * scale)
@@ -517,7 +1020,6 @@ def generate_creator_thumbnail(
             px = target_w - nw - 40
             py = target_h - nh
         else:
-            # In 9:16, scale subject to fill upper body (1.62x width), center horizontally
             scale = (target_w * 1.62) / cutout.width
             nw = int(cutout.width * scale)
             nh = int(cutout.height * scale)
@@ -525,65 +1027,33 @@ def generate_creator_thumbnail(
             px = (target_w - nw) // 2
             py = 310
 
-        rim_color = (60, 200, 255) if (virality_score or 0) >= 80 else (255, 180, 50)
-        canvas = apply_rim_light(canvas, cutout_resized, px, py, rim_color=rim_color)
+        rim_col = preset.get("rim_color", (60, 200, 255))
+        canvas = apply_rim_light(canvas, cutout_resized, px, py, rim_color=rim_col)
 
-    # 5. Create Layer 3: Crimson Grunge Slash Banner & Atmospheric Sparks
+    # 6. Create Layer 3: Preset-Tailored Banner & Atmospheric FX
     if aspect_ratio == "16:9":
         by1 = target_h - 220
         by2 = target_h - 30
-        banner = draw_grunge_slash_banner(target_w, target_h, by1, by2, color=(190, 10, 20), angle_offset=30)
     else:
         by1 = 1010
         by2 = 1490
-        banner = draw_grunge_slash_banner(target_w, target_h, by1, by2, color=(195, 15, 28), angle_offset=45)
 
+    banner = draw_preset_banner(target_w, target_h, by1, by2, preset=preset, aspect_ratio=aspect_ratio)
     canvas = Image.alpha_composite(canvas, banner)
-    canvas = add_atmospheric_fx(canvas, by1)
+    canvas = add_atmospheric_fx(canvas, by1, p_colors=preset.get("p_colors"))
 
-    # 6. Create Layer 4: 3D Blockbuster Typography
+    # 7. Create Layer 4: Stylized Typography (Rendered with preset image font & shaders)
     part1, part2 = parse_blockbuster_phrases(title, hook_text)
-
-    font_size_1 = 92 if aspect_ratio == "16:9" else 125
-    font_size_2 = 82 if aspect_ratio == "16:9" else 115
-    font1 = get_thumbnail_font(font_size_1, prefer_black_han=True)
-    font2 = get_thumbnail_font(font_size_2, prefer_black_han=True)
 
     txt_canvas_w = target_w + 350
     txt_canvas_h = 350 if aspect_ratio == "16:9" else 550
     txt_img = Image.new("RGBA", (txt_canvas_w, txt_canvas_h), (0, 0, 0, 0))
-    tdraw = ImageDraw.Draw(txt_img)
 
-    if aspect_ratio == "16:9":
-        # 16:9 Layout: Horizontal side-by-side
-        bbox1 = tdraw.textbbox((0, 0), part1, font=font1)
-        w1 = bbox1[2] - bbox1[0]
-        bbox2 = tdraw.textbbox((0, 0), f" {part2}", font=font2)
-        w2 = bbox2[2] - bbox2[0]
-        total_w = w1 + w2
+    render_preset_typography(txt_img, part1, part2, preset=preset, aspect_ratio=aspect_ratio)
 
-        sx = (txt_canvas_w - total_w) // 2
-        sy = 70
-        # Part 1: Ruby Metallic Gloss with White Inner Stroke
-        render_graphic_text_block(txt_img, part1, font1, sx, sy, style="ruby_gloss", depth=18, inner_stroke_color=(255, 255, 255))
-        # Part 2: Distressed Concrete Weathered
-        render_graphic_text_block(txt_img, f" {part2}", font2, sx + w1 + 10, sy, style="concrete_weathered", depth=18, inner_stroke_color=(20, 20, 20))
-    else:
-        # 9:16 Layout: Two stacked lines
-        bbox1 = tdraw.textbbox((0, 0), part1, font=font1)
-        w1 = bbox1[2] - bbox1[0]
-        sx1 = (txt_canvas_w - w1) // 2
-        # Line 1: Gold Metallic Gloss with White Inner Stroke
-        render_graphic_text_block(txt_img, part1, font1, sx1, 40, style="gold_gloss", depth=22, inner_stroke_color=(255, 255, 255))
-
-        bbox2 = tdraw.textbbox((0, 0), part2, font=font2)
-        w2 = bbox2[2] - bbox2[0]
-        sx2 = (txt_canvas_w - w2) // 2
-        # Line 2: Distressed Concrete Weathered with Black 3D
-        render_graphic_text_block(txt_img, part2, font2, sx2, 220, style="concrete_weathered", depth=22, inner_stroke_color=(20, 20, 20))
-
-    # Rotate text canvas by -3.5 degrees (positive angle for clockwise tilt)
-    rotated_txt = txt_img.rotate(3.5, resample=Image.Resampling.BICUBIC, expand=True)
+    # Apply preset dynamic tilt
+    tilt_deg = -float(preset.get("tilt", -3.5))
+    rotated_txt = txt_img.rotate(tilt_deg, resample=Image.Resampling.BICUBIC, expand=True)
 
     tx = (target_w - rotated_txt.width) // 2
     if aspect_ratio == "16:9":
@@ -593,7 +1063,7 @@ def generate_creator_thumbnail(
 
     canvas.paste(rotated_txt, (tx, ty), rotated_txt)
 
-    # 7. Final Polish & Save
+    # 8. Final Polish & Save
     final_rgb = canvas.convert("RGB")
     final_rgb.save(str(out_p), format="JPEG", quality=95, subsampling=0)
     return str(out_p)
