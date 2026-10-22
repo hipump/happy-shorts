@@ -285,17 +285,38 @@ def calculate_infinite_loop_score(start_text: str, end_text: str) -> int:
         score += 6
     return min(98, score)
 
+def resolve_optimal_llm(preferred: Optional[str] = None) -> str:
+    """
+    Resolves the best available local LLM from Ollama:
+    Hierarchy: preferred (if installed) > qwen3:14b > qwen2.5:14b > qwen2.5:7b.
+    """
+    try:
+        models = [getattr(m, "model", str(m)) for m in ollama.list().models]
+        models_str = " ".join(models)
+        if preferred and preferred in models_str:
+            return preferred
+        if "qwen3:14b" in models_str:
+            return "qwen3:14b"
+        if "qwen2.5:14b" in models_str:
+            return "qwen2.5:14b"
+        if "qwen2.5:7b" in models_str:
+            return "qwen2.5:7b"
+    except Exception:
+        pass
+    return preferred or "qwen2.5:14b"
+
 def summarize_clip_content(
     transcript: Transcript,
     start_time: float,
     end_time: float,
     title: str = "",
-    model_name: str = "qwen2.5:14b"
+    model_name: Optional[str] = None
 ) -> List[str]:
     """
     Extracts 2 concrete, factual summary takeaway points of what is taught or explained
     in this specific clip, using the real dialogue content.
     """
+    active_model = resolve_optimal_llm(model_name)
     clip_segs = [s for s in transcript.segments if start_time <= s.end and s.start <= end_time]
     dialogue_lines = [s.text.strip() for s in clip_segs if s.text.strip()]
     dialogue_text = " ".join(dialogue_lines)
@@ -317,7 +338,7 @@ def summarize_clip_content(
             f"4. '시청자 몰입도', '핵심 구간', '하이라이트' 같은 추상적인 문구 절대 금지\n"
         )
         resp = ollama.chat(
-            model=model_name,
+            model=active_model,
             messages=[
                 {"role": "system", "content": "You are a concise video summarizer. Output 2 factual bullet points in Korean without emojis. Always write 'AI' instead of '에이아이'."},
                 {"role": "user", "content": prompt}
@@ -332,7 +353,8 @@ def summarize_clip_content(
                 },
                 "required": ["points"]
             },
-            options={"temperature": 0.2}
+            options={"temperature": 0.2},
+            keep_alive="0s"
         )
         data = json.loads(resp["message"]["content"])
         pts = [normalize_acronyms(strip_emojis(p)).strip() for p in data.get("points", []) if p]
@@ -451,7 +473,7 @@ def fallback_heuristic_highlights(
 
 def detect_highlights(
     transcript: Transcript,
-    model_name: str = "qwen2.5:14b",
+    model_name: Optional[str] = None,
     max_count: int = 1,
     target_duration_range: tuple[int, int] = (30, 50),
     video_path: Optional[str] = None,
@@ -462,6 +484,7 @@ def detect_highlights(
     Guarantees every clip is between min_dur (30s) and max_dur (50s).
     Evaluates clips using Opus Clip's 4-Pillar Virality Scoring model.
     """
+    active_model = resolve_optimal_llm(model_name)
     min_dur, max_dur = target_duration_range
 
     if transcript.duration <= 60.0:
@@ -561,16 +584,17 @@ def detect_highlights(
 
     try:
         if callback:
-            callback(70, f"Ollama LLM ({model_name}) 심층 문맥 추론 및 바이럴 구간 탐색 중...")
+            callback(70, f"Ollama LLM ({active_model}) 심층 문맥 추론 및 바이럴 구간 탐색 중...")
 
         response = ollama.chat(
-            model=model_name,
+            model=active_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
             format=schema,
-            options={"temperature": 0.25}
+            options={"temperature": 0.25},
+            keep_alive="0s"
         )
         content = response["message"]["content"]
 

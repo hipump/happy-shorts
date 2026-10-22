@@ -245,7 +245,7 @@ def get_system_status():
         "status": "online",
         "ollama_connected": ollama_ok,
         "available_llm_models": models_available,
-        "active_llm_default": "qwen2.5:14b" if "qwen2.5:14b" in str(models_available) else "qwen2.5:7b",
+        "active_llm_default": "qwen3:14b" if "qwen3:14b" in str(models_available) else ("qwen2.5:14b" if "qwen2.5:14b" in str(models_available) else "qwen2.5:7b"),
         "active_whisper_default": "large-v3-turbo",
         "output_count": len(list(OUTPUT_DIR.glob("*.mp4"))),
         "downloads_count": len(list(DOWNLOADS_DIR.glob("*.mp4")))

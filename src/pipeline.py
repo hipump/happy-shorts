@@ -141,7 +141,8 @@ class ShortsPipeline:
         seamless_loop: bool = True
     ):
         self.whisper_model = whisper_model
-        self.llm_model = llm_model
+        from src.highlighter import resolve_optimal_llm
+        self.llm_model = resolve_optimal_llm(llm_model)
         self.template = template if template else get_template(template_id)
         self.layout_mode = layout_mode or self.template.layout_type
         self.show_badge = show_badge

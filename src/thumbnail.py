@@ -173,20 +173,16 @@ TYPOGRAPHY_PRESETS: Dict[str, Dict] = {
 def parse_blockbuster_phrases(title: str, hook_text: str) -> Tuple[str, str]:
     """
     Extracts 2 high-impact, punchy phrases from title and hook without repetition.
-    Part 1: The trigger word (4~8 chars, quoted)
-    Part 2: The outcome / consequence (4~10 chars)
+    Line 1 (part1): Main trigger headline (quoted)
+    Line 2 (part2): Outcome / punchline
+    Preserves full text integrity without cutting off words mid-sentence.
     """
     clean_t = (title or "").strip().replace("에이아이", "AI").split("#")[0].strip()
     clean_h = (hook_text or "").strip().replace("에이아이", "AI").split("#")[0].strip()
 
-    if clean_h:
-        part1 = clean_h
-        remainder = clean_t
-        # Clean overlapping words or prefixes
-        for word in clean_h.split():
-            if len(word) >= 2:
-                remainder = remainder.replace(f"{word} 속", "").replace(f"{word} 시", "").replace(f"{word} 때", "").replace(word, "").strip()
-        part2 = remainder if remainder else "100% 필수 시청"
+    if clean_t and clean_h:
+        part1 = clean_t
+        part2 = clean_h
     elif clean_t:
         words = clean_t.split()
         if len(words) >= 2:
@@ -195,13 +191,12 @@ def parse_blockbuster_phrases(title: str, hook_text: str) -> Tuple[str, str]:
         else:
             part1 = clean_t
             part2 = "100% 필수 시청"
+    elif clean_h:
+        part1 = clean_h
+        part2 = "100% 필수 시청"
     else:
         part1 = "긴급 대처법"
         part2 = "모르면 손해"
-
-    # Enforce character limits
-    part1 = part1[:10].strip()
-    part2 = part2[:12].strip()
 
     # Wrap part1 in quotes if not present
     if not (part1.startswith("“") or part1.startswith('"') or part1.startswith("'")):
@@ -490,6 +485,24 @@ def render_preset_typography(
     cw, ch = txt_canvas.size
     tdraw = ImageDraw.Draw(txt_canvas)
 
+    # Dynamic auto-fit text width: strictly constrain to 840px (leaving >= 120px safe margins on 1080 canvas)
+    max_w = 800 if aspect_ratio == "16:9" else 840
+    while base_s1 > 36:
+        bb1 = tdraw.textbbox((0, 0), part1, font=font1)
+        if (bb1[2] - bb1[0]) > max_w:
+            base_s1 = int(base_s1 * 0.90)
+            font1 = get_preset_font(font_file, base_s1)
+        else:
+            break
+
+    while base_s2 > 36:
+        bb2 = tdraw.textbbox((0, 0), part2, font=font2)
+        if (bb2[2] - bb2[0]) > max_w:
+            base_s2 = int(base_s2 * 0.90)
+            font2 = get_preset_font(font_file, base_s2)
+        else:
+            break
+
     # 1. 3D Blockbuster
     if p_id == "blockbuster_3d":
         style1 = preset.get("style1", "ruby_gloss")
@@ -748,27 +761,49 @@ def extract_subject_cutout(pil_img: Image.Image) -> Optional[Image.Image]:
     """
     Extracts foreground subject (face/person/object) using local rembg (u2net).
     Runs in < 1 second.
-    Applies facial clarity, sharpness, and vibrant skin tone punch.
+    Crops strictly to subject bounding box and applies facial clarity & contrast.
     """
     try:
         session = get_rembg_session()
         if session is False:
             return None
         import rembg
-        # Resize temporarily if huge to ensure instant inference
-        max_dim = 960
+
         orig_w, orig_h = pil_img.size
-        working_img = pil_img.copy()
-        if max(orig_w, orig_h) > max_dim:
+        # Exclude bottom subtitle region cleanly (subtitles always sit in bottom 25%)
+        clean_input = pil_img.crop((0, 0, orig_w, int(orig_h * 0.75))) if orig_h > 400 else pil_img
+
+        max_dim = 960
+        cw, ch = clean_input.size
+        working_img = clean_input.copy()
+        if max(cw, ch) > max_dim:
             working_img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
         cutout = rembg.remove(working_img, session=session)
-        if cutout.size != (orig_w, orig_h):
-            cutout = cutout.resize((orig_w, orig_h), Image.Resampling.LANCZOS)
+        if cutout.size != (cw, ch):
+            cutout = cutout.resize((cw, ch), Image.Resampling.LANCZOS)
+
+        # Filter alpha mask to keep only the largest connected component (human presenter)
+        import numpy as np
+        alpha_arr = np.array(cutout.split()[3])
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats((alpha_arr > 30).astype(np.uint8))
+        if num_labels > 2:
+            areas = stats[1:, cv2.CC_STAT_AREA]
+            max_label = 1 + int(np.argmax(areas))
+            mask = (labels == max_label).astype(np.uint8) * 255
+            alpha_arr = np.minimum(alpha_arr, mask)
+            cutout.putalpha(Image.fromarray(alpha_arr))
+
+        # Crop strictly to the alpha bounding box
+        alpha = cutout.split()[3]
+        bbox = alpha.getbbox()
+        if not bbox or (bbox[2] - bbox[0] < 60) or (bbox[3] - bbox[1] < 60):
+            return None
+        cutout = cutout.crop(bbox)
 
         # Enhance subject punch (face clarity, contrast, skin vibrance)
         r, g, b, a = cutout.split()
         rgb_c = Image.merge("RGB", (r, g, b))
-        rgb_c = ImageEnhance.Sharpness(rgb_c).enhance(1.6)
+        rgb_c = ImageEnhance.Sharpness(rgb_c).enhance(1.8)
         rgb_c = ImageEnhance.Contrast(rgb_c).enhance(1.22)
         rgb_c = ImageEnhance.Color(rgb_c).enhance(1.25)
         return Image.merge("RGBA", (*rgb_c.split(), a))
@@ -815,10 +850,10 @@ def create_cinematic_bg(
     target_h: int
 ) -> Image.Image:
     """
-    Transforms a raw video frame into a rich, contrasty, bokeh background.
+    Transforms a raw video frame into a rich, deep bokeh cinematic background.
+    Uses deep blur (radius 48) to completely eliminate ghost heads and old subtitle traces.
     """
     rw, rh = raw_frame_rgb.size
-    # Crop to target aspect ratio
     target_ratio = target_w / target_h
     raw_ratio = rw / rh
 
@@ -834,19 +869,19 @@ def create_cinematic_bg(
     bg = cropped.resize((target_w, target_h), Image.Resampling.LANCZOS)
     bg = ImageEnhance.Contrast(bg).enhance(1.25)
     bg = ImageEnhance.Color(bg).enhance(1.3)
-    bg = bg.filter(ImageFilter.GaussianBlur(22))
+    bg = bg.filter(ImageFilter.GaussianBlur(48))
 
-    # Top & bottom vignette
+    # Top & bottom deep vignette to eliminate any artifacts and frame the content
     vignette = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
     vdraw = ImageDraw.Draw(vignette)
     for y in range(target_h):
-        if y < int(target_h * 0.2):
-            a = int(190 * (1.0 - y / (target_h * 0.2)))
-        elif y > int(target_h * 0.5):
-            a = int(230 * ((y - target_h * 0.5) / (target_h * 0.5)))
+        if y < 750:
+            a = int(180 * (1.0 - y / 750) + 70)
+        elif y > 1400:
+            a = int(220 * ((y - 1400) / 520))
         else:
-            a = 70
-        vdraw.line([(0, y), (target_w, y)], fill=(5, 5, 12, a))
+            a = 60
+        vdraw.line([(0, y), (target_w, y)], fill=(8, 10, 16, a))
 
     return Image.alpha_composite(bg.convert("RGBA"), vignette)
 
@@ -1020,27 +1055,28 @@ def generate_creator_thumbnail(
             px = target_w - nw - 40
             py = target_h - nh
         else:
-            scale = (target_w * 1.62) / cutout.width
+            # Anchor hero subject to bottom of vertical 9:16 canvas
+            target_person_h = int(target_h * 0.64)  # ~1230px
+            scale = target_person_h / cutout.height
             nw = int(cutout.width * scale)
             nh = int(cutout.height * scale)
             cutout_resized = cutout.resize((nw, nh), Image.Resampling.LANCZOS)
             px = (target_w - nw) // 2
-            py = 310
+            py = target_h - nh
 
         rim_col = preset.get("rim_color", (60, 200, 255))
         canvas = apply_rim_light(canvas, cutout_resized, px, py, rim_color=rim_col)
 
-    # 6. Create Layer 3: Preset-Tailored Banner & Atmospheric FX
+    # 6. Create Layer 3: Preset-Tailored Banner & Atmospheric FX (Upper third for 9:16)
     if aspect_ratio == "16:9":
         by1 = target_h - 220
         by2 = target_h - 30
     else:
-        by1 = 1010
-        by2 = 1490
+        by1 = 160
+        by2 = 640
 
     banner = draw_preset_banner(target_w, target_h, by1, by2, preset=preset, aspect_ratio=aspect_ratio)
     canvas = Image.alpha_composite(canvas, banner)
-    canvas = add_atmospheric_fx(canvas, by1, p_colors=preset.get("p_colors"))
 
     # 7. Create Layer 4: Stylized Typography (Rendered with preset image font & shaders)
     part1, part2 = parse_blockbuster_phrases(title, hook_text)
@@ -1059,7 +1095,7 @@ def generate_creator_thumbnail(
     if aspect_ratio == "16:9":
         ty = target_h - rotated_txt.height + 40
     else:
-        ty = by1 - 10
+        ty = by1 - 20
 
     canvas.paste(rotated_txt, (tx, ty), rotated_txt)
 
