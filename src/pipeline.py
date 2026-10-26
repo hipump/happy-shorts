@@ -391,6 +391,7 @@ class ShortsPipeline:
 
             # Extract high-res viral pro thumbnail
             try:
+                console.print(f"  [bold cyan]🎨 2026 고화질 3D 크리에이터 썸네일 합성 중...[/bold cyan]")
                 generate_pro_thumbnail(
                     video_path=output_path,
                     output_cover_path=cover_path,
@@ -406,6 +407,7 @@ class ShortsPipeline:
                     duration=h.duration,
                     virality_score=h.virality_score,
                 )
+                console.print(f"  [bold green]✔ 크리에이터 썸네일 완성:[/bold green] {cover_path}")
             except Exception as e:
                 console.print(f"  [yellow]⚠ 프로 썸네일 생성 실패, 기본 캡처로 대체: {e}[/yellow]")
                 try:

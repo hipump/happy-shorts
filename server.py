@@ -112,6 +112,7 @@ class RenderRequest(BaseModel):
     hook_variant_type: str = Field(default="default", description="선택된 훅 헤드라인 타입 (default, curiosity, urgency, benefit)")
     enable_stat_pill: bool = Field(default=True, description="키노트 글래스모피즘 수치 카드 팝업")
     seamless_loop: bool = Field(default=True, description="무한 반복 시청을 위한 오디오 마이크로 크로스페이드")
+    thumbnail_preset: Optional[str] = Field(default=None, description="썸네일 폰트 및 비주얼 스타일 프리셋 (auto, blockbuster, jelly_pop, ink_splatter, cyber_neon, gold_luxury, spooky, variety_show, washi_vlog)")
     target_filename: Optional[str] = None
 
 class ThumbnailRenderRequest(BaseModel):
@@ -783,9 +784,20 @@ async def run_render_task(job_id: str, req: RenderRequest):
 
             # Generate creator-grade thumbnail with full-bleed face crop and solid backplates
             try:
+                prefix = f"[{clip_idx}/{total_clips}번째 쇼츠] " if total_clips > 1 else ""
+                thumb_prog = min(98, clip_base_pct + int(0.92 * clip_span))
+                await emit_job_event(job_id, {
+                    "status": "running",
+                    "progress": thumb_prog,
+                    "step": 4,
+                    "message": f"{prefix}🎨 2026 고화질 3D 크리에이터 썸네일 합성 중..."
+                })
+
+                src_vid_str = str(metadata.local_path) if (metadata and metadata.local_path and Path(metadata.local_path).exists()) else None
+
                 await loop.run_in_executor(
                     None,
-                    lambda o_p=str(out_path), c_p=str(cover_path), h=h_obj, m=metadata, ar=req.aspect_ratio: generate_creator_thumbnail(
+                    lambda o_p=str(out_path), c_p=str(cover_path), h=h_obj, s_v=src_vid_str, ar=req.aspect_ratio, p_set=req.thumbnail_preset: generate_creator_thumbnail(
                         video_path=o_p,
                         output_cover_path=c_p,
                         title=h.title,
@@ -795,9 +807,10 @@ async def run_render_task(job_id: str, req: RenderRequest):
                         headline_style="yellow_on_black",
                         punchline_style="white_on_black",
                         aspect_ratio=ar,
-                        source_video_path=str(m.local_path) if m and m.local_path else None,
+                        source_video_path=s_v,
                         start_time=h.start_time,
                         duration=h.duration,
+                        style_preset=p_set,
                     )
                 )
             except Exception as e:

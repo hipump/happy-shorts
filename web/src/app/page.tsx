@@ -89,8 +89,10 @@ export default function HappyShortsApp() {
   const [removeSubtitles, setRemoveSubtitles] = useState<boolean>(true);
   const [filterFillers, setFilterFillers] = useState<boolean>(true);
 
-  // Pro Studio Quality Options (BGM, SFX, Color Grading, Dynamic Zoom, Smart Keywords, Keynote Stat Pill, Seamless Loop)
-  const [studioOptionTab, setStudioOptionTab] = useState<"audio" | "visual" | "typography">("audio");
+  // Pro Studio Quality Options (BGM, SFX, Color Grading, Dynamic Zoom, Smart Keywords, Keynote Stat Pill, Seamless Loop, Thumbnail Presets)
+  const [studioOptionTab, setStudioOptionTab] = useState<"audio" | "visual" | "typography" | "thumbnail">("audio");
+  const [selectedThumbnailPreset, setSelectedThumbnailPreset] = useState<string>("auto");
+  const [resultMediaTab, setResultMediaTab] = useState<"video" | "cover">("video");
   const [bgmTrack, setBgmTrack] = useState<string>("auto");
   const [enableSfx, setEnableSfx] = useState<boolean>(true);
   const [colorGrade, setColorGrade] = useState<string>("vibrant_tech");
@@ -380,7 +382,7 @@ export default function HappyShortsApp() {
           setIsAnalyzing(false);
           try {
             localStorage.removeItem("happy_active_job");
-          } catch {}
+          } catch { }
           if (payload.transcript_summary) {
             setTranscriptSummary(payload.transcript_summary);
           }
@@ -404,7 +406,7 @@ export default function HappyShortsApp() {
           setIsAnalyzing(false);
           try {
             localStorage.removeItem("happy_active_job");
-          } catch {}
+          } catch { }
           setErrorMsg(`AI 분석 중 오류가 발생했습니다: ${payload.error}`);
         }
       } catch (e) {
@@ -435,7 +437,7 @@ export default function HappyShortsApp() {
           setIsAnalyzing(false);
           try {
             localStorage.removeItem("happy_active_job");
-          } catch {}
+          } catch { }
           if (pollData.transcript_summary) setTranscriptSummary(pollData.transcript_summary);
           const hlList = pollData.highlights || [];
           setHighlights(hlList);
@@ -457,7 +459,7 @@ export default function HappyShortsApp() {
           setIsAnalyzing(false);
           try {
             localStorage.removeItem("happy_active_job");
-          } catch {}
+          } catch { }
           setErrorMsg(`AI 분석 중 오류가 발생했습니다: ${pollData.error}`);
         }
       } catch {
@@ -499,7 +501,7 @@ export default function HappyShortsApp() {
           setIsRendering(false);
           try {
             localStorage.removeItem("happy_active_job");
-          } catch {}
+          } catch { }
           const results = payload.results || (payload.result ? [payload.result] : []);
           setBatchResults(results);
           setSelectedBatchIdx(0);
@@ -518,7 +520,7 @@ export default function HappyShortsApp() {
           setIsRendering(false);
           try {
             localStorage.removeItem("happy_active_job");
-          } catch {}
+          } catch { }
           setErrorMsg(`렌더링 실패: ${payload.error}`);
         }
       } catch (e) {
@@ -547,7 +549,7 @@ export default function HappyShortsApp() {
           setIsRendering(false);
           try {
             localStorage.removeItem("happy_active_job");
-          } catch {}
+          } catch { }
           const results = pollData.results || (pollData.result ? [pollData.result] : []);
           setBatchResults(results);
           setSelectedBatchIdx(0);
@@ -566,7 +568,7 @@ export default function HappyShortsApp() {
           setIsRendering(false);
           try {
             localStorage.removeItem("happy_active_job");
-          } catch {}
+          } catch { }
           setErrorMsg(`렌더링 실패: ${pollData.error}`);
         }
       } catch {
@@ -677,7 +679,7 @@ export default function HappyShortsApp() {
           "happy_active_job",
           JSON.stringify({ jobId, type: "analyze", startTime: Date.now() })
         );
-      } catch {}
+      } catch { }
 
       subscribeToAnalyzeJob(jobId);
     } catch (err: unknown) {
@@ -784,6 +786,7 @@ export default function HappyShortsApp() {
           hook_variant_type: selectedHookVariants[targetHighlightsWithVariants[0]?.id] || "default",
           enable_stat_pill: enableStatPill,
           seamless_loop: seamlessLoop,
+          thumbnail_preset: selectedThumbnailPreset === "auto" ? null : selectedThumbnailPreset,
         }),
       });
 
@@ -807,7 +810,7 @@ export default function HappyShortsApp() {
           "happy_active_job",
           JSON.stringify({ jobId, type: "render", startTime: Date.now() })
         );
-      } catch {}
+      } catch { }
 
       subscribeToRenderJob(jobId);
     } catch (err: unknown) {
@@ -884,11 +887,10 @@ export default function HappyShortsApp() {
         <div className="flex items-center bg-slate-900/90 p-1 rounded-xl border border-slate-800 shadow-inner">
           <button
             onClick={() => setActiveTab("studio")}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-              activeTab === "studio"
+            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${activeTab === "studio"
                 ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-600/30"
                 : "text-slate-400 hover:text-slate-200"
-            }`}
+              }`}
           >
             <Sparkles className="w-4 h-4" />
             <span>쇼츠 제작 스튜디오</span>
@@ -901,11 +903,10 @@ export default function HappyShortsApp() {
           </button>
           <button
             onClick={() => setActiveTab("gallery")}
-            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-              activeTab === "gallery"
+            className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${activeTab === "gallery"
                 ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-600/30"
                 : "text-slate-400 hover:text-slate-200"
-            }`}
+              }`}
           >
             <FolderOpen className="w-4 h-4" />
             <span>완성 보관함 ({outputs.length})</span>
@@ -916,9 +917,8 @@ export default function HappyShortsApp() {
         <div className="flex items-center gap-3">
           <div className="hidden md:flex items-center gap-2 text-xs bg-slate-900/80 px-3 py-1.5 rounded-lg border border-slate-800 text-slate-300">
             <span
-              className={`w-2 h-2 rounded-full ${
-                systemStatus?.ollama_connected ? "bg-emerald-400 animate-pulse" : "bg-rose-400"
-              }`}
+              className={`w-2 h-2 rounded-full ${systemStatus?.ollama_connected ? "bg-emerald-400 animate-pulse" : "bg-rose-400"
+                }`}
             />
             <span className="text-slate-400">Ollama:</span>
             <span className="font-semibold text-emerald-400">
@@ -974,24 +974,22 @@ export default function HappyShortsApp() {
                         onClick={() => {
                           setCurrentStep(s.num);
                         }}
-                        className={`flex items-center gap-3 px-3 py-2 rounded-xl transition-all ${
-                          isActive
+                        className={`flex items-center gap-3 px-3 py-2 rounded-xl transition-all ${isActive
                             ? "bg-indigo-600/20 border border-indigo-500/40 text-indigo-300 shadow-sm"
                             : isDone
-                            ? "text-emerald-400 hover:bg-slate-800/50"
-                            : "text-slate-400 hover:text-slate-200"
-                        }`}
+                              ? "text-emerald-400 hover:bg-slate-800/50"
+                              : "text-slate-400 hover:text-slate-200"
+                          }`}
                       >
                         <div
-                          className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${
-                            isActive
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${isActive
                               ? "bg-indigo-500 text-white shadow-md shadow-indigo-500/40"
                               : isBusyHere
-                              ? "bg-rose-500/30 text-rose-300 border border-rose-500/50"
-                              : isDone
-                              ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                              : "bg-slate-800 text-slate-400"
-                          }`}
+                                ? "bg-rose-500/30 text-rose-300 border border-rose-500/50"
+                                : isDone
+                                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                                  : "bg-slate-800 text-slate-400"
+                            }`}
                         >
                           {isBusyHere ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-400" />
@@ -1045,33 +1043,30 @@ export default function HappyShortsApp() {
                 <div className="grid grid-cols-3 gap-2.5 p-1 bg-slate-900/80 rounded-xl border border-slate-800">
                   <button
                     onClick={() => setSourceMode("youtube")}
-                    className={`py-2.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${
-                      sourceMode === "youtube"
+                    className={`py-2.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${sourceMode === "youtube"
                         ? "bg-gradient-to-r from-red-600 to-rose-600 text-white shadow-md shadow-red-600/20"
                         : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
-                    }`}
+                      }`}
                   >
                     <Radio className="w-4 h-4" />
                     유튜브 URL
                   </button>
                   <button
                     onClick={() => setSourceMode("recent")}
-                    className={`py-2.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${
-                      sourceMode === "recent"
+                    className={`py-2.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${sourceMode === "recent"
                         ? "bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md shadow-amber-600/20"
                         : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
-                    }`}
+                      }`}
                   >
                     <Zap className="w-4 h-4" />
                     최근 작업 캐시 ({recentVideos.length}개)
                   </button>
                   <button
                     onClick={() => setSourceMode("local")}
-                    className={`py-2.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${
-                      sourceMode === "local"
+                    className={`py-2.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 ${sourceMode === "local"
                         ? "bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-600/20"
                         : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
-                    }`}
+                      }`}
                   >
                     <FolderOpen className="w-4 h-4" />
                     내 PC 로컬 영상
@@ -1116,11 +1111,10 @@ export default function HappyShortsApp() {
                             <div
                               key={v.filename}
                               onClick={() => setSelectedRecent(v)}
-                              className={`p-3 rounded-xl border cursor-pointer transition flex items-center justify-between ${
-                                isSelected
+                              className={`p-3 rounded-xl border cursor-pointer transition flex items-center justify-between ${isSelected
                                   ? "bg-amber-500/10 border-amber-500/50 text-amber-200 shadow-sm"
                                   : "bg-slate-950/50 border-slate-800/80 hover:bg-slate-900 text-slate-300"
-                              }`}
+                                }`}
                             >
                               <div className="flex items-center gap-3 overflow-hidden">
                                 <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center flex-shrink-0 font-bold text-xs">
@@ -1176,11 +1170,10 @@ export default function HappyShortsApp() {
                         <button
                           type="button"
                           onClick={() => setAspectRatio("9:16")}
-                          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
-                            aspectRatio === "9:16"
+                          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${aspectRatio === "9:16"
                               ? "bg-indigo-600/20 border-indigo-500 text-indigo-300 shadow-sm"
                               : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
-                          }`}
+                            }`}
                         >
                           <span>📱 세로 9:16</span>
                           <span className="text-[10px] text-amber-400 font-normal">얼굴 자동추적</span>
@@ -1188,11 +1181,10 @@ export default function HappyShortsApp() {
                         <button
                           type="button"
                           onClick={() => setAspectRatio("16:9")}
-                          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
-                            aspectRatio === "16:9"
+                          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 ${aspectRatio === "16:9"
                               ? "bg-indigo-600/20 border-indigo-500 text-indigo-300 shadow-sm"
                               : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
-                          }`}
+                            }`}
                         >
                           <span>🖥️ 가로 16:9</span>
                           <span className="text-[10px] text-slate-500 font-normal">와이드</span>
@@ -1220,11 +1212,10 @@ export default function HappyShortsApp() {
                               setMinDur(d.min);
                               setMaxDur(d.max);
                             }}
-                            className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-semibold border transition ${
-                              minDur === d.min && maxDur === d.max
+                            className={`flex-1 py-1.5 px-2 rounded-lg text-[11px] font-semibold border transition ${minDur === d.min && maxDur === d.max
                                 ? "bg-indigo-600/20 border-indigo-500 text-indigo-300 shadow-sm"
                                 : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
-                            }`}
+                              }`}
                           >
                             {d.label}
                           </button>
@@ -1243,11 +1234,10 @@ export default function HappyShortsApp() {
                             key={cnt}
                             type="button"
                             onClick={() => setClipsCount(cnt)}
-                            className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold border transition ${
-                              clipsCount === cnt
+                            className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold border transition ${clipsCount === cnt
                                 ? "bg-indigo-600/20 border-indigo-500 text-indigo-300 shadow-sm"
                                 : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
-                            }`}
+                              }`}
                           >
                             {cnt}개
                           </button>
@@ -1268,20 +1258,18 @@ export default function HappyShortsApp() {
                       <button
                         type="button"
                         onClick={() => setRemoveSubtitles(!removeSubtitles)}
-                        className={`w-full p-2.5 rounded-xl text-xs font-semibold border transition flex items-center justify-between ${
-                          removeSubtitles
+                        className={`w-full p-2.5 rounded-xl text-xs font-semibold border transition flex items-center justify-between ${removeSubtitles
                             ? "bg-amber-500/10 border-amber-500/50 text-amber-200 shadow-sm"
                             : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
-                        }`}
+                          }`}
                       >
                         <div className="text-left">
                           <p className="font-bold text-slate-200">🧹 LaMa 딥러닝 인페인팅</p>
                           <p className="text-[11px] text-slate-400 mt-0.5">블러 흔적 없이 배경/의류 완벽 복원</p>
                         </div>
                         <div
-                          className={`w-8 h-4.5 flex items-center rounded-full p-0.5 transition duration-300 flex-shrink-0 ${
-                            removeSubtitles ? "bg-amber-500 justify-end" : "bg-slate-800 justify-start"
-                          }`}
+                          className={`w-8 h-4.5 flex items-center rounded-full p-0.5 transition duration-300 flex-shrink-0 ${removeSubtitles ? "bg-amber-500 justify-end" : "bg-slate-800 justify-start"
+                            }`}
                         >
                           <div className="bg-white w-3.5 h-3.5 rounded-full shadow-md" />
                         </div>
@@ -1298,20 +1286,18 @@ export default function HappyShortsApp() {
                       <button
                         type="button"
                         onClick={() => setFilterFillers(!filterFillers)}
-                        className={`w-full p-2.5 rounded-xl text-xs font-semibold border transition flex items-center justify-between ${
-                          filterFillers
+                        className={`w-full p-2.5 rounded-xl text-xs font-semibold border transition flex items-center justify-between ${filterFillers
                             ? "bg-emerald-500/10 border-emerald-500/50 text-emerald-200 shadow-sm"
                             : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
-                        }`}
+                          }`}
                       >
                         <div className="text-left">
                           <p className="font-bold text-slate-200">✨ 추임새 자동 정리</p>
                           <p className="text-[11px] text-slate-400 mt-0.5">어, 음, 네, 아 등의 단독 팝업 방지</p>
                         </div>
                         <div
-                          className={`w-8 h-4.5 flex items-center rounded-full p-0.5 transition duration-300 flex-shrink-0 ${
-                            filterFillers ? "bg-emerald-500 justify-end" : "bg-slate-800 justify-start"
-                          }`}
+                          className={`w-8 h-4.5 flex items-center rounded-full p-0.5 transition duration-300 flex-shrink-0 ${filterFillers ? "bg-emerald-500 justify-end" : "bg-slate-800 justify-start"
+                            }`}
                         >
                           <div className="bg-white w-3.5 h-3.5 rounded-full shadow-md" />
                         </div>
@@ -1405,11 +1391,10 @@ export default function HappyShortsApp() {
                         key={cat.id}
                         type="button"
                         onClick={() => setSelectedCategory(cat.id)}
-                        className={`px-3 py-1.5 rounded-full font-semibold whitespace-nowrap transition flex items-center gap-1.5 ${
-                          isActive
+                        className={`px-3 py-1.5 rounded-full font-semibold whitespace-nowrap transition flex items-center gap-1.5 ${isActive
                             ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30 border border-indigo-400"
                             : "bg-slate-900/80 text-slate-400 hover:text-slate-200 border border-slate-800 hover:border-slate-700"
-                        }`}
+                          }`}
                       >
                         <span>{cat.label}</span>
                         {cat.count > 0 && (
@@ -1453,16 +1438,15 @@ export default function HappyShortsApp() {
                       </span>
                     </div>
 
-                    {/* 3 Tabs */}
-                    <div className="flex items-center p-1 bg-slate-900 rounded-xl border border-slate-800 text-xs">
+                    {/* 4 Tabs */}
+                    <div className="flex items-center p-1 bg-slate-900 rounded-xl border border-slate-800 text-xs overflow-x-auto">
                       <button
                         type="button"
                         onClick={() => setStudioOptionTab("audio")}
-                        className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
-                          studioOptionTab === "audio"
+                        className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 shrink-0 ${studioOptionTab === "audio"
                             ? "bg-indigo-600 text-white shadow-sm"
                             : "text-slate-400 hover:text-slate-200"
-                        }`}
+                          }`}
                       >
                         <Music className="w-3.5 h-3.5" />
                         <span>오디오 연출</span>
@@ -1470,11 +1454,10 @@ export default function HappyShortsApp() {
                       <button
                         type="button"
                         onClick={() => setStudioOptionTab("visual")}
-                        className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
-                          studioOptionTab === "visual"
+                        className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 shrink-0 ${studioOptionTab === "visual"
                             ? "bg-indigo-600 text-white shadow-sm"
                             : "text-slate-400 hover:text-slate-200"
-                        }`}
+                          }`}
                       >
                         <Palette className="w-3.5 h-3.5" />
                         <span>비주얼 & 카메라</span>
@@ -1482,14 +1465,24 @@ export default function HappyShortsApp() {
                       <button
                         type="button"
                         onClick={() => setStudioOptionTab("typography")}
-                        className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
-                          studioOptionTab === "typography"
+                        className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 shrink-0 ${studioOptionTab === "typography"
                             ? "bg-indigo-600 text-white shadow-sm"
                             : "text-slate-400 hover:text-slate-200"
-                        }`}
+                          }`}
                       >
                         <Type className="w-3.5 h-3.5" />
                         <span>타이포 & 모션</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStudioOptionTab("thumbnail")}
+                        className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 shrink-0 ${studioOptionTab === "thumbnail"
+                            ? "bg-gradient-to-r from-amber-500 to-rose-600 text-white shadow-sm"
+                            : "text-slate-400 hover:text-slate-200"
+                          }`}
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>🎨 3D 썸네일 엔진</span>
                       </button>
                     </div>
                   </div>
@@ -1541,11 +1534,10 @@ export default function HappyShortsApp() {
                         <button
                           type="button"
                           onClick={() => setEnableSfx(!enableSfx)}
-                          className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-between ${
-                            enableSfx
+                          className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-between ${enableSfx
                               ? "bg-amber-500/15 border-amber-500/50 text-amber-300 shadow-sm"
                               : "bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300"
-                          }`}
+                            }`}
                         >
                           <span>{enableSfx ? "🔔 바이럴 SFX 효과음 활성화됨" : "효과음 끄기"}</span>
                           <div className={`w-7 h-4 flex items-center rounded-full p-0.5 transition ${enableSfx ? "bg-amber-500 justify-end" : "bg-slate-800 justify-start"}`}>
@@ -1603,11 +1595,10 @@ export default function HappyShortsApp() {
                         <button
                           type="button"
                           onClick={() => setDynamicZoom(!dynamicZoom)}
-                          className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-between ${
-                            dynamicZoom
+                          className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-between ${dynamicZoom
                               ? "bg-cyan-500/15 border-cyan-500/50 text-cyan-300 shadow-sm"
                               : "bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300"
-                          }`}
+                            }`}
                         >
                           <span>{dynamicZoom ? "🔍 1.10x 다이내믹 줌 활성화됨" : "줌 효과 끄기"}</span>
                           <div className={`w-7 h-4 flex items-center rounded-full p-0.5 transition ${dynamicZoom ? "bg-cyan-500 justify-end" : "bg-slate-800 justify-start"}`}>
@@ -1642,11 +1633,10 @@ export default function HappyShortsApp() {
                               key={s.id}
                               type="button"
                               onClick={() => setSubtitleStyle(s.id)}
-                              className={`px-3 py-1.5 rounded-lg font-semibold transition ${
-                                subtitleStyle === s.id
+                              className={`px-3 py-1.5 rounded-lg font-semibold transition ${subtitleStyle === s.id
                                   ? "bg-indigo-600 text-white shadow"
                                   : "text-slate-400 hover:text-slate-200"
-                              }`}
+                                }`}
                             >
                               {s.label}
                             </button>
@@ -1670,11 +1660,10 @@ export default function HappyShortsApp() {
                           <button
                             type="button"
                             onClick={() => setSmartKeywords(!smartKeywords)}
-                            className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${
-                              smartKeywords
+                            className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${smartKeywords
                                 ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-300"
                                 : "bg-slate-950 border-slate-800 text-slate-500"
-                            }`}
+                              }`}
                           >
                             <span>{smartKeywords ? "🔤 네온 하이라이트" : "일반 단일색"}</span>
                             <div className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition ${smartKeywords ? "bg-emerald-500 justify-end" : "bg-slate-800 justify-start"}`}>
@@ -1697,11 +1686,10 @@ export default function HappyShortsApp() {
                           <button
                             type="button"
                             onClick={() => setBounceAnimation(!bounceAnimation)}
-                            className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${
-                              bounceAnimation
+                            className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${bounceAnimation
                                 ? "bg-fuchsia-500/15 border-fuchsia-500/50 text-fuchsia-300"
                                 : "bg-slate-950 border-slate-800 text-slate-500"
-                            }`}
+                              }`}
                           >
                             <span>{bounceAnimation ? "🌀 탄성 바운스 켜짐" : "정적 팝업"}</span>
                             <div className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition ${bounceAnimation ? "bg-fuchsia-500 justify-end" : "bg-slate-800 justify-start"}`}>
@@ -1724,11 +1712,10 @@ export default function HappyShortsApp() {
                           <button
                             type="button"
                             onClick={() => setEnableStatPill(!enableStatPill)}
-                            className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${
-                              enableStatPill
+                            className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${enableStatPill
                                 ? "bg-amber-500/15 border-amber-500/50 text-amber-300"
                                 : "bg-slate-950 border-slate-800 text-slate-500"
-                            }`}
+                              }`}
                           >
                             <span>{enableStatPill ? "📊 수치 요약 카드" : "카드 끄기"}</span>
                             <div className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition ${enableStatPill ? "bg-amber-500 justify-end" : "bg-slate-800 justify-start"}`}>
@@ -1751,11 +1738,10 @@ export default function HappyShortsApp() {
                           <button
                             type="button"
                             onClick={() => setSeamlessLoop(!seamlessLoop)}
-                            className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${
-                              seamlessLoop
+                            className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${seamlessLoop
                                 ? "bg-violet-500/15 border-violet-500/50 text-violet-300"
                                 : "bg-slate-950 border-slate-800 text-slate-500"
-                            }`}
+                              }`}
                           >
                             <span>{seamlessLoop ? "🔁 무한 루프 싱크" : "일반 컷"}</span>
                             <div className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition ${seamlessLoop ? "bg-violet-500 justify-end" : "bg-slate-800 justify-start"}`}>
@@ -1778,17 +1764,65 @@ export default function HappyShortsApp() {
                           <button
                             type="button"
                             onClick={() => setShowBadge(!showBadge)}
-                            className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${
-                              showBadge
+                            className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${showBadge
                                 ? "bg-indigo-500/15 border-indigo-500/50 text-indigo-300"
                                 : "bg-slate-950 border-slate-800 text-slate-500"
-                            }`}
+                              }`}
                           >
                             <span>{showBadge ? "🏷️ 3초 훅 뱃지 켜짐" : "뱃지 숨김"}</span>
                             <div className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition ${showBadge ? "bg-indigo-500 justify-end" : "bg-slate-800 justify-start"}`}>
                               <div className="bg-white w-2.5 h-2.5 rounded-full shadow" />
                             </div>
                           </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tab 4: 3D Creator Thumbnail Style Presets */}
+                  {studioOptionTab === "thumbnail" && (
+                    <div className="flex flex-col gap-3">
+                      <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col gap-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-800">
+                          <div>
+                            <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                              <Sparkles className="w-4 h-4 text-amber-400" />
+                              2026 바이럴 3D 크리에이터 썸네일 엔진 프리셋
+                            </span>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              쇼츠 렌더링 시 1080×1920 UHD 4레이어(시네마틱 보케 배경 + 인물 누끼 + 림라이트 + 3D 타이포) 썸네일이 자동 합성됩니다.
+                            </p>
+                          </div>
+                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 shrink-0 self-start sm:self-auto">
+                            100% 자동 생성 파이프라인
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                          {[
+                            { id: "auto", name: "🤖 AI 문맥 자동 감지", desc: "주제/감정 분석 후 최적 프리셋 자동 적용" },
+                            { id: "blockbuster", name: "🍿 3D 블록버스터", desc: "BagelFatOne 3D 음각 & 입체 임팩트" },
+                            { id: "jelly_pop", name: "🍬 젤리 팝 스티커", desc: "도톰한 화이트 보더 팝아트 스티커" },
+                            { id: "ink_splatter", name: "🖌️ 캘리 붓먹물", desc: "EastSeaDokdo 먹물 스플래터 긴급경고" },
+                            { id: "cyber_neon", name: "⚡ 사이버 네온", desc: "GasoekOne 시안/블루 네온 글로우" },
+                            { id: "gold_luxury", name: "👑 24K 골드 럭셔리", desc: "금빛 메탈 그라데이션 재테크/명품" },
+                            { id: "spooky", name: "👻 스푸키 고스트", desc: "오싹한 공포 스릴러 & 충격 미스터리" },
+                            { id: "variety_show", name: "📺 TV 예능 자막", desc: "GmarketSans 옐로우/마젠타 예능감" },
+                            { id: "washi_vlog", name: "🌿 감성 브이로그", desc: "KyoboHand 와시 테이프 따뜻한 힐링" },
+                          ].map((pst) => (
+                            <button
+                              key={pst.id}
+                              type="button"
+                              onClick={() => setSelectedThumbnailPreset(pst.id)}
+                              className={`p-3 rounded-xl border text-left transition flex flex-col justify-between gap-1 ${selectedThumbnailPreset === pst.id
+                                  ? "bg-gradient-to-r from-amber-500/15 via-rose-500/15 to-indigo-500/15 border-amber-500/60 shadow-md ring-1 ring-amber-500/40 text-white"
+                                  : "bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+                                }`}
+                            >
+                              <span className="text-xs font-bold">{pst.name}</span>
+                              <span className="text-[10px] text-slate-500 line-clamp-1">{pst.desc}</span>
+                            </button>
+                          ))}
                         </div>
                       </div>
                     </div>
@@ -1960,23 +1994,21 @@ export default function HappyShortsApp() {
                         return (
                           <div
                             key={s.stepNum}
-                            className={`p-4 rounded-xl border transition-all flex flex-col justify-between min-h-[110px] ${
-                              s.isActive
+                            className={`p-4 rounded-xl border transition-all flex flex-col justify-between min-h-[110px] ${s.isActive
                                 ? "bg-slate-900/90 border-indigo-500 shadow-lg shadow-indigo-500/10 ring-1 ring-indigo-500/50"
                                 : s.isDone
-                                ? "bg-emerald-950/20 border-emerald-500/40"
-                                : "bg-slate-950/40 border-slate-800/60 opacity-60"
-                            }`}
+                                  ? "bg-emerald-950/20 border-emerald-500/40"
+                                  : "bg-slate-950/40 border-slate-800/60 opacity-60"
+                              }`}
                           >
                             <div className="flex items-center justify-between mb-2">
                               <span
-                                className={`text-[10px] font-mono px-2 py-0.5 rounded-md font-bold ${
-                                  s.isActive
+                                className={`text-[10px] font-mono px-2 py-0.5 rounded-md font-bold ${s.isActive
                                     ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/40"
                                     : s.isDone
-                                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                                    : "bg-slate-800 text-slate-500 border border-slate-700"
-                                }`}
+                                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                                      : "bg-slate-800 text-slate-500 border border-slate-700"
+                                  }`}
                               >
                                 STEP {s.stepNum}
                               </span>
@@ -1996,13 +2028,12 @@ export default function HappyShortsApp() {
                             <div>
                               <div className="flex items-center gap-1.5 font-bold text-xs text-white">
                                 <Icon
-                                  className={`w-3.5 h-3.5 ${
-                                    s.isActive
+                                  className={`w-3.5 h-3.5 ${s.isActive
                                       ? "text-indigo-400"
                                       : s.isDone
-                                      ? "text-emerald-400"
-                                      : "text-slate-500"
-                                  }`}
+                                        ? "text-emerald-400"
+                                        : "text-slate-500"
+                                    }`}
                                 />
                                 <span>{s.title}</span>
                               </div>
@@ -2171,11 +2202,10 @@ export default function HappyShortsApp() {
                             <div
                               key={hl.id}
                               onClick={() => handleSelectHighlightCandidate(hl)}
-                              className={`p-5 rounded-2xl border cursor-pointer transition-all ${
-                                isSelected
+                              className={`p-5 rounded-2xl border cursor-pointer transition-all ${isSelected
                                   ? "bg-gradient-to-r from-slate-900/90 to-indigo-950/50 border-indigo-500 shadow-lg ring-1 ring-indigo-500/60"
                                   : "glass-card hover:border-slate-700"
-                              }`}
+                                }`}
                             >
                               <div className="flex items-start justify-between gap-4 mb-2">
                                 <div className="flex items-center gap-2.5">
@@ -2189,11 +2219,10 @@ export default function HappyShortsApp() {
                                         prev.includes(hl.id) ? prev.filter((id) => id !== hl.id) : [...prev, hl.id]
                                       );
                                     }}
-                                    className={`w-6 h-6 rounded-lg flex items-center justify-center border transition ${
-                                      isChecked
+                                    className={`w-6 h-6 rounded-lg flex items-center justify-center border transition ${isChecked
                                         ? "bg-indigo-600 border-indigo-400 text-white shadow-sm"
                                         : "bg-slate-900 border-slate-700 text-transparent hover:border-slate-500"
-                                    }`}
+                                      }`}
                                   >
                                     <Check className="w-4 h-4 stroke-[3]" />
                                   </button>
@@ -2202,13 +2231,12 @@ export default function HappyShortsApp() {
                                     #{hl.id}
                                   </span>
                                   <span
-                                    className={`text-xs font-black px-2.5 py-0.5 rounded-lg flex items-center gap-1 ${
-                                      hl.virality_score >= 90
+                                    className={`text-xs font-black px-2.5 py-0.5 rounded-lg flex items-center gap-1 ${hl.virality_score >= 90
                                         ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
                                         : hl.virality_score >= 80
-                                        ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
-                                        : "bg-indigo-500/20 text-indigo-300 border border-indigo-500/40"
-                                    }`}
+                                          ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                                          : "bg-indigo-500/20 text-indigo-300 border border-indigo-500/40"
+                                      }`}
                                   >
                                     <Flame className="w-3.5 h-3.5 fill-current" />
                                     {hl.virality_score}점
@@ -2275,10 +2303,10 @@ export default function HappyShortsApp() {
                                         {selectedHookVariants[hl.id] === "curiosity"
                                           ? "🤔 호기심형"
                                           : selectedHookVariants[hl.id] === "urgency"
-                                          ? "⚠️ 손실회피형"
-                                          : selectedHookVariants[hl.id] === "benefit"
-                                          ? "🚀 극대이득형"
-                                          : "✨ 기본형"}
+                                            ? "⚠️ 손실회피형"
+                                            : selectedHookVariants[hl.id] === "benefit"
+                                              ? "🚀 극대이득형"
+                                              : "✨ 기본형"}
                                       </span>
                                     </div>
                                     <p className="text-xs text-amber-200 font-bold leading-snug">
@@ -2337,17 +2365,15 @@ export default function HappyShortsApp() {
                                               });
                                             }
                                           }}
-                                          className={`p-2 rounded-xl text-left border transition flex flex-col justify-between gap-1 ${
-                                            isCurrent
+                                          className={`p-2 rounded-xl text-left border transition flex flex-col justify-between gap-1 ${isCurrent
                                               ? "bg-slate-900 border-indigo-500 shadow-md ring-1 ring-indigo-500/60"
                                               : "bg-slate-950/60 border-slate-800/80 hover:bg-slate-900/80 hover:border-slate-700"
-                                          }`}
+                                            }`}
                                         >
                                           <div className="flex items-center justify-between w-full">
                                             <span
-                                              className={`text-[10px] font-bold ${
-                                                isCurrent ? "text-indigo-300" : "text-slate-400"
-                                              }`}
+                                              className={`text-[10px] font-bold ${isCurrent ? "text-indigo-300" : "text-slate-400"
+                                                }`}
                                             >
                                               {v.label}
                                             </span>
@@ -2422,11 +2448,10 @@ export default function HappyShortsApp() {
                                 key={sz.id}
                                 type="button"
                                 onClick={() => setPreviewSafeZoneMode(sz.id as SafeZonePlatform)}
-                                className={`px-1.5 py-0.5 rounded font-bold transition ${
-                                  previewSafeZoneMode === sz.id
+                                className={`px-1.5 py-0.5 rounded font-bold transition ${previewSafeZoneMode === sz.id
                                     ? "bg-indigo-600 text-white shadow-sm"
                                     : "text-slate-400 hover:text-slate-200"
-                                }`}
+                                  }`}
                               >
                                 {sz.label}
                               </button>
@@ -2468,7 +2493,7 @@ export default function HappyShortsApp() {
                                       setIsPreviewPlaying(false);
                                     } else {
                                       previewVideoRef.current.currentTime = previewTimeRange.start;
-                                      previewVideoRef.current.play().then(() => setIsPreviewPlaying(true)).catch(() => {});
+                                      previewVideoRef.current.play().then(() => setIsPreviewPlaying(true)).catch(() => { });
                                     }
                                   }
                                 }}
@@ -2569,12 +2594,12 @@ export default function HappyShortsApp() {
                                   {colorGrade === "vibrant_tech"
                                     ? "⚡ 바이브런트 테크"
                                     : colorGrade === "warm_clean"
-                                    ? "☀️ 웜 클린"
-                                    : colorGrade === "film_contrast"
-                                    ? "🎬 시네마틱 필름"
-                                    : colorGrade === "clean"
-                                    ? "✨ 클린 샤픈"
-                                    : "원본 색감"}
+                                      ? "☀️ 웜 클린"
+                                      : colorGrade === "film_contrast"
+                                        ? "🎬 시네마틱 필름"
+                                        : colorGrade === "clean"
+                                          ? "✨ 클린 샤픈"
+                                          : "원본 색감"}
                                 </span>
                                 <span className="px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-slate-300 text-[10px]">
                                   🎵 BGM: {bgmTrack === "auto" ? "템플릿 자동" : bgmTrack === "none" ? "끄기" : bgmTrack}
@@ -2751,23 +2776,21 @@ export default function HappyShortsApp() {
                         return (
                           <div
                             key={s.stepNum}
-                            className={`p-4 rounded-xl border transition-all flex flex-col justify-between min-h-[110px] ${
-                              s.isActive
+                            className={`p-4 rounded-xl border transition-all flex flex-col justify-between min-h-[110px] ${s.isActive
                                 ? "bg-slate-900/90 border-rose-500 shadow-lg shadow-rose-500/10 ring-1 ring-rose-500/50"
                                 : s.isDone
-                                ? "bg-emerald-950/20 border-emerald-500/40"
-                                : "bg-slate-950/40 border-slate-800/60 opacity-60"
-                            }`}
+                                  ? "bg-emerald-950/20 border-emerald-500/40"
+                                  : "bg-slate-950/40 border-slate-800/60 opacity-60"
+                              }`}
                           >
                             <div className="flex items-center justify-between mb-2">
                               <span
-                                className={`text-[10px] font-mono px-2 py-0.5 rounded-md font-bold ${
-                                  s.isActive
+                                className={`text-[10px] font-mono px-2 py-0.5 rounded-md font-bold ${s.isActive
                                     ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
                                     : s.isDone
-                                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                                    : "bg-slate-800 text-slate-500 border border-slate-700"
-                                }`}
+                                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                                      : "bg-slate-800 text-slate-500 border border-slate-700"
+                                  }`}
                               >
                                 STEP {s.stepNum}
                               </span>
@@ -2787,13 +2810,12 @@ export default function HappyShortsApp() {
                             <div>
                               <div className="flex items-center gap-1.5 font-bold text-xs text-white">
                                 <Icon
-                                  className={`w-3.5 h-3.5 ${
-                                    s.isActive
+                                  className={`w-3.5 h-3.5 ${s.isActive
                                       ? "text-rose-400"
                                       : s.isDone
-                                      ? "text-emerald-400"
-                                      : "text-slate-500"
-                                  }`}
+                                        ? "text-emerald-400"
+                                        : "text-slate-500"
+                                    }`}
                                 />
                                 <span>{s.title}</span>
                               </div>
@@ -2846,11 +2868,10 @@ export default function HappyShortsApp() {
                                   setSelectedBatchIdx(idx);
                                   setRenderedResult(item);
                                 }}
-                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
-                                  isCurrent
+                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${isCurrent
                                     ? "bg-gradient-to-r from-rose-600 via-indigo-600 to-violet-600 text-white shadow-md shadow-indigo-500/30 ring-2 ring-indigo-400"
                                     : "bg-slate-900 text-slate-300 hover:text-white border border-slate-800 hover:border-slate-700"
-                                }`}
+                                  }`}
                               >
                                 <Flame className="w-3.5 h-3.5 text-amber-400" />
                                 <span>쇼츠 #{item.id || idx + 1}</span>
@@ -2867,150 +2888,263 @@ export default function HappyShortsApp() {
                     )}
 
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                    {/* Left: Video Player */}
-                    <div className="lg:col-span-5 flex flex-col items-center justify-center">
-                      {/* Mobile Safe Zone Guideline Selector Bar */}
-                      {aspectRatio === "9:16" && (
-                        <div className="flex items-center gap-2 mb-3 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl shadow-lg">
-                          <span className="text-xs font-bold text-slate-300 flex items-center gap-1">
-                            <Smartphone className="w-3.5 h-3.5 text-indigo-400" /> 세이프존 검증:
-                          </span>
-                          <div className="flex items-center gap-1">
-                            {[
-                              { id: "none", label: "끄기" },
-                              { id: "youtube", label: "유튜브 쇼츠" },
-                              { id: "reels", label: "릴스" },
-                              { id: "tiktok", label: "틱톡" },
-                            ].map((sz) => (
-                              <button
-                                key={sz.id}
-                                type="button"
-                                onClick={() => setSafeZoneMode(sz.id as SafeZonePlatform)}
-                                className={`px-2 py-0.5 rounded text-[11px] font-bold transition ${
-                                  safeZoneMode === sz.id
-                                    ? "bg-indigo-600 text-white shadow"
-                                    : "text-slate-400 hover:text-slate-200"
-                                }`}
-                              >
-                                {sz.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className={`w-full ${aspectRatio === "16:9" ? "max-w-[560px] rounded-[28px]" : "max-w-[340px] rounded-[36px]"} bg-slate-950 p-3 border-4 border-slate-800 shadow-2xl shadow-indigo-500/10`}>
-                        {/* Notch for 9:16 mobile shorts */}
-                        {aspectRatio === "9:16" && (
-                          <div className="w-28 h-4 bg-slate-800 rounded-full mx-auto mb-2" />
-                        )}
-                        <div className={`relative ${aspectRatio === "16:9" ? "aspect-video rounded-[18px]" : "aspect-[9/16] rounded-[24px]"} overflow-hidden bg-black`}>
-                          <video
-                            src={renderedResult.stream_url}
-                            controls
-                            autoPlay
-                            loop
-                            className="w-full h-full object-contain"
-                          />
-                          {aspectRatio === "9:16" && (
-                            <SafeZoneOverlay platform={safeZoneMode} />
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3 mt-4">
-                        <a
-                          href={renderedResult.stream_url}
-                          download={renderedResult.filename}
-                          className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md transition"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                          쇼츠 MP4 다운로드
-                        </a>
-                        <button
-                          onClick={handleOpenFinder}
-                          className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition"
-                        >
-                          <FolderOpen className="w-3.5 h-3.5" />
-                          Finder 열기
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Right: 2026 YouTube Shorts SEO Metadata Center */}
-                    <div className="lg:col-span-7 flex flex-col gap-4">
-                      <div className="glass-panel p-6 rounded-2xl border border-slate-800/80 flex flex-col gap-4">
-                        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                          <div>
-                            <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
-                              <Check className="w-4 h-4" />
-                              쇼츠 제작 완료!
-                            </span>
-                            <h2 className="text-lg font-bold text-white mt-1">2026 유튜브 알고리즘 SEO 패키지</h2>
-                          </div>
+                      {/* Left: Video & 3D Thumbnail Player */}
+                      <div className="lg:col-span-5 flex flex-col items-center justify-center">
+                        {/* Media Toggle: Video vs 3D Cover */}
+                        <div className="flex items-center gap-1.5 p-1 bg-slate-900 border border-slate-800 rounded-xl mb-3 shadow-md">
                           <button
-                            onClick={() => {
-                              setCurrentStep(1);
-                              setRenderedResult(null);
-                            }}
-                            className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition"
+                            type="button"
+                            onClick={() => setResultMediaTab("video")}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${resultMediaTab === "video"
+                                ? "bg-indigo-600 text-white shadow-sm"
+                                : "text-slate-400 hover:text-slate-200"
+                              }`}
                           >
-                            새 쇼츠 만들기
+                            <Play className="w-3.5 h-3.5" />
+                            쇼츠 영상 (MP4)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setResultMediaTab("cover")}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${resultMediaTab === "cover"
+                                ? "bg-gradient-to-r from-amber-500 to-rose-600 text-white shadow-sm"
+                                : "text-slate-400 hover:text-slate-200"
+                              }`}
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            3D 썸네일 (JPG)
                           </button>
                         </div>
 
-                        {/* SEO guide content display */}
-                        <div className="flex flex-col gap-3 text-xs">
-                          <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 relative group">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="font-bold text-amber-300">📌 추천 제목 1안 (CTR 최적화)</span>
-                              <button
-                                onClick={() =>
-                                  copyToClipboard(
-                                    renderedResult.title || "완성된 쇼츠",
-                                    "title1"
-                                  )
-                                }
-                                className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-white"
-                              >
-                                {copiedKey === "title1" ? (
-                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                ) : (
-                                  <Copy className="w-3.5 h-3.5" />
-                                )}
-                                {copiedKey === "title1" ? "복사됨!" : "복사"}
-                              </button>
+                        {/* Mobile Safe Zone Guideline Selector Bar */}
+                        {aspectRatio === "9:16" && (
+                          <div className="flex items-center gap-2 mb-3 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl shadow-lg">
+                            <span className="text-xs font-bold text-slate-300 flex items-center gap-1">
+                              <Smartphone className="w-3.5 h-3.5 text-indigo-400" /> 세이프존 검증:
+                            </span>
+                            <div className="flex items-center gap-1">
+                              {[
+                                { id: "none", label: "끄기" },
+                                { id: "youtube", label: "유튜브 쇼츠" },
+                                { id: "reels", label: "릴스" },
+                                { id: "tiktok", label: "틱톡" },
+                              ].map((sz) => (
+                                <button
+                                  key={sz.id}
+                                  type="button"
+                                  onClick={() => setSafeZoneMode(sz.id as SafeZonePlatform)}
+                                  className={`px-2 py-0.5 rounded text-[11px] font-bold transition ${safeZoneMode === sz.id
+                                      ? "bg-indigo-600 text-white shadow"
+                                      : "text-slate-400 hover:text-slate-200"
+                                    }`}
+                                >
+                                  {sz.label}
+                                </button>
+                              ))}
                             </div>
-                            <p className="text-slate-200 font-semibold">{renderedResult.title}</p>
+                          </div>
+                        )}
+
+                        <div className={`w-full ${aspectRatio === "16:9" ? "max-w-[560px] rounded-[28px]" : "max-w-[340px] rounded-[36px]"} bg-slate-950 p-3 border-4 border-slate-800 shadow-2xl shadow-indigo-500/10`}>
+                          {/* Notch for 9:16 mobile shorts */}
+                          {aspectRatio === "9:16" && (
+                            <div className="w-28 h-4 bg-slate-800 rounded-full mx-auto mb-2" />
+                          )}
+                          <div className={`relative ${aspectRatio === "16:9" ? "aspect-video rounded-[18px]" : "aspect-[9/16] rounded-[24px]"} overflow-hidden bg-black`}>
+                            {resultMediaTab === "cover" && renderedResult.cover_url ? (
+                              <img
+                                src={renderedResult.cover_url}
+                                alt="완성된 썸네일"
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <video
+                                src={renderedResult.stream_url}
+                                controls
+                                autoPlay
+                                loop
+                                className="w-full h-full object-contain"
+                              />
+                            )}
+                            {aspectRatio === "9:16" && (
+                              <SafeZoneOverlay platform={safeZoneMode} />
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
+                          <a
+                            href={renderedResult.stream_url}
+                            download={renderedResult.filename}
+                            className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md transition"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            쇼츠 MP4 다운로드
+                          </a>
+
+                          {renderedResult.cover_url && (
+                            <a
+                              href={renderedResult.cover_url}
+                              download={`cover_${renderedResult.filename.replace(/\.mp4$/i, ".jpg")}`}
+                              className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md transition"
+                            >
+                              <ImageIcon className="w-3.5 h-3.5" />
+                              썸네일 JPG 다운로드
+                            </a>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => openThumbnailEditor(renderedResult)}
+                            className="px-3.5 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 text-xs font-bold flex items-center gap-1.5 transition"
+                          >
+                            <Palette className="w-3.5 h-3.5" />
+                            썸네일 맞춤 스튜디오
+                          </button>
+
+                          <button
+                            onClick={handleOpenFinder}
+                            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition"
+                          >
+                            <FolderOpen className="w-3.5 h-3.5" />
+                            Finder 열기
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Right: 2026 YouTube Shorts SEO Metadata & 3D Thumbnail Package */}
+                      <div className="lg:col-span-7 flex flex-col gap-4">
+                        <div className="glass-panel p-6 rounded-2xl border border-slate-800/80 flex flex-col gap-4">
+                          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                            <div>
+                              <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
+                                <Check className="w-4 h-4" />
+                                쇼츠 제작 완료!
+                              </span>
+                              <h2 className="text-lg font-bold text-white mt-1">2026 유튜브 알고리즘 SEO & 썸네일 패키지</h2>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setCurrentStep(1);
+                                setRenderedResult(null);
+                              }}
+                              className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition"
+                            >
+                              새 쇼츠 만들기
+                            </button>
                           </div>
 
-                          <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 relative group">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="font-bold text-indigo-300">📝 전체 유튜브 설명란 및 태그 TXT</span>
-                              <button
-                                onClick={() =>
-                                  copyToClipboard(renderedResult.seo_content || "", "fullSeo")
-                                }
-                                className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-white"
+                          {/* 2026 High-CTR Creator Thumbnail Spotlight Card */}
+                          {renderedResult.cover_url && (
+                            <div className="p-4 rounded-xl bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-amber-500/30 flex flex-col sm:flex-row items-center gap-4 shadow-lg">
+                              <div
+                                onClick={() => openThumbnailEditor(renderedResult)}
+                                className="relative w-24 shrink-0 aspect-[9/16] rounded-lg overflow-hidden border border-white/10 cursor-pointer group shadow-md"
+                                title="클릭하여 썸네일 맞춤 스튜디오 열기"
                               >
-                                {copiedKey === "fullSeo" ? (
-                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                ) : (
-                                  <Copy className="w-3.5 h-3.5" />
-                                )}
-                                {copiedKey === "fullSeo" ? "전체 복사됨!" : "전체 복사"}
-                              </button>
+                                <img
+                                  src={renderedResult.cover_url}
+                                  alt="썸네일 미리보기"
+                                  className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                                />
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                  <Palette className="w-4 h-4 text-white" />
+                                </div>
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                    1080×1920 UHD
+                                  </span>
+                                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+                                    4-Layer 3D 엔진
+                                  </span>
+                                  <span className="text-[10px] font-mono text-emerald-400 font-semibold flex items-center gap-1">
+                                    <Check className="w-3 h-3" /> 자동 생성 완료
+                                  </span>
+                                </div>
+                                <h4 className="text-sm font-bold text-white line-clamp-1">
+                                  🎨 2026 바이럴 3D 크리에이터 썸네일
+                                </h4>
+                                <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                                  시네마틱 보케 배경 + AI 인물 누끼 + 네온 림라이트 + 3D 그래픽 타이포그래피가 자동 합성되었습니다.
+                                </p>
+
+                                <div className="flex items-center gap-2 mt-3 flex-wrap">
+                                  <a
+                                    href={renderedResult.cover_url}
+                                    download={`cover_${renderedResult.filename.replace(/\.mp4$/i, ".jpg")}`}
+                                    className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-bold flex items-center gap-1.5 transition"
+                                  >
+                                    <Download className="w-3 h-3" />
+                                    썸네일 다운로드 (JPG)
+                                  </a>
+                                  <button
+                                    type="button"
+                                    onClick={() => openThumbnailEditor(renderedResult)}
+                                    className="px-3 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 text-[11px] font-bold flex items-center gap-1.5 transition"
+                                  >
+                                    <Palette className="w-3 h-3" />
+                                    스튜디오에서 커스텀 수정
+                                  </button>
+                                </div>
+                              </div>
                             </div>
-                            <pre className="text-slate-300 whitespace-pre-wrap font-sans text-xs max-h-64 overflow-y-auto leading-relaxed">
-                              {renderedResult.seo_content || "메타데이터가 생성되었습니다."}
-                            </pre>
+                          )}
+
+                          {/* SEO guide content display */}
+                          <div className="flex flex-col gap-3 text-xs">
+                            <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 relative group">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="font-bold text-amber-300">📌 추천 제목 1안 (CTR 최적화)</span>
+                                <button
+                                  onClick={() =>
+                                    copyToClipboard(
+                                      renderedResult.title || "완성된 쇼츠",
+                                      "title1"
+                                    )
+                                  }
+                                  className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-white"
+                                >
+                                  {copiedKey === "title1" ? (
+                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                  ) : (
+                                    <Copy className="w-3.5 h-3.5" />
+                                  )}
+                                  {copiedKey === "title1" ? "복사됨!" : "복사"}
+                                </button>
+                              </div>
+                              <p className="text-slate-200 font-semibold">{renderedResult.title}</p>
+                            </div>
+
+                            <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 relative group">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="font-bold text-indigo-300">📝 전체 유튜브 설명란 및 태그 TXT</span>
+                                <button
+                                  onClick={() =>
+                                    copyToClipboard(renderedResult.seo_content || "", "fullSeo")
+                                  }
+                                  className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-white"
+                                >
+                                  {copiedKey === "fullSeo" ? (
+                                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                  ) : (
+                                    <Copy className="w-3.5 h-3.5" />
+                                  )}
+                                  {copiedKey === "fullSeo" ? "전체 복사됨!" : "전체 복사"}
+                                </button>
+                              </div>
+                              <pre className="text-slate-300 whitespace-pre-wrap font-sans text-xs max-h-64 overflow-y-auto leading-relaxed">
+                                {renderedResult.seo_content || "메타데이터가 생성되었습니다."}
+                              </pre>
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ) : null}
+                ) : null}
               </div>
             )}
           </div>
@@ -3104,31 +3238,28 @@ export default function HappyShortsApp() {
                   <div className="flex items-center p-1 rounded-xl bg-slate-950 border border-slate-800 text-xs">
                     <button
                       onClick={() => setGalleryFilter("all")}
-                      className={`px-3 py-1 rounded-lg font-bold transition text-[11px] ${
-                        galleryFilter === "all"
+                      className={`px-3 py-1 rounded-lg font-bold transition text-[11px] ${galleryFilter === "all"
                           ? "bg-indigo-600 text-white shadow-sm"
                           : "text-slate-400 hover:text-slate-200"
-                      }`}
+                        }`}
                     >
                       전체 ({outputs.length})
                     </button>
                     <button
                       onClick={() => setGalleryFilter("9:16")}
-                      className={`px-3 py-1 rounded-lg font-bold transition text-[11px] ${
-                        galleryFilter === "9:16"
+                      className={`px-3 py-1 rounded-lg font-bold transition text-[11px] ${galleryFilter === "9:16"
                           ? "bg-indigo-600 text-white shadow-sm"
                           : "text-slate-400 hover:text-slate-200"
-                      }`}
+                        }`}
                     >
                       📱 9:16 세로
                     </button>
                     <button
                       onClick={() => setGalleryFilter("16:9")}
-                      className={`px-3 py-1 rounded-lg font-bold transition text-[11px] ${
-                        galleryFilter === "16:9"
+                      className={`px-3 py-1 rounded-lg font-bold transition text-[11px] ${galleryFilter === "16:9"
                           ? "bg-indigo-600 text-white shadow-sm"
                           : "text-slate-400 hover:text-slate-200"
-                      }`}
+                        }`}
                     >
                       🖥️ 16:9 가로
                     </button>
@@ -3138,22 +3269,20 @@ export default function HappyShortsApp() {
                   <div className="flex items-center p-1 rounded-xl bg-slate-950 border border-slate-800 text-xs">
                     <button
                       onClick={() => setGalleryViewMode("grid")}
-                      className={`p-1.5 rounded-lg transition ${
-                        galleryViewMode === "grid"
+                      className={`p-1.5 rounded-lg transition ${galleryViewMode === "grid"
                           ? "bg-indigo-600 text-white shadow-sm"
                           : "text-slate-400 hover:text-slate-200"
-                      }`}
+                        }`}
                       title="📱 쇼츠 그리드 뷰 (9:16 갤러리 피드)"
                     >
                       <Grid className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => setGalleryViewMode("feed")}
-                      className={`p-1.5 rounded-lg transition ${
-                        galleryViewMode === "feed"
+                      className={`p-1.5 rounded-lg transition ${galleryViewMode === "feed"
                           ? "bg-indigo-600 text-white shadow-sm"
                           : "text-slate-400 hover:text-slate-200"
-                      }`}
+                        }`}
                       title="📋 상세 리스트 뷰 (비디오 + SEO 가이드)"
                     >
                       <List className="w-4 h-4" />
@@ -3204,9 +3333,8 @@ export default function HappyShortsApp() {
                         {/* 9:16 Media Container */}
                         <div
                           onClick={() => setPreviewModalOutput(out)}
-                          className={`relative cursor-pointer bg-slate-950 overflow-hidden ${
-                            isLandscape ? "aspect-video" : "aspect-[9/16]"
-                          }`}
+                          className={`relative cursor-pointer bg-slate-950 overflow-hidden ${isLandscape ? "aspect-video" : "aspect-[9/16]"
+                            }`}
                         >
                           {out.cover_url ? (
                             <img
@@ -3273,7 +3401,6 @@ export default function HappyShortsApp() {
                               title="재생 및 SEO 확인"
                             >
                               <Play className="w-3 h-3 fill-indigo-300" />
-                              재생
                             </button>
 
                             <a
@@ -3336,11 +3463,10 @@ export default function HappyShortsApp() {
                         {/* Left Video / Cover (No black side voids!) */}
                         <div
                           onClick={() => setPreviewModalOutput(out)}
-                          className={`relative shrink-0 cursor-pointer rounded-xl overflow-hidden bg-slate-950 border border-slate-800 group shadow-md ${
-                            isLandscape
+                          className={`relative shrink-0 cursor-pointer rounded-xl overflow-hidden bg-slate-950 border border-slate-800 group shadow-md ${isLandscape
                               ? "w-full sm:w-[240px] aspect-video"
                               : "w-full sm:w-[170px] aspect-[9/16]"
-                          }`}
+                            }`}
                         >
                           {out.cover_url ? (
                             <img
@@ -3537,11 +3663,10 @@ export default function HappyShortsApp() {
                                   key={sz.id}
                                   type="button"
                                   onClick={() => setSafeZoneMode(sz.id as SafeZonePlatform)}
-                                  className={`px-1.5 py-0.5 rounded font-bold transition ${
-                                    safeZoneMode === sz.id
+                                  className={`px-1.5 py-0.5 rounded font-bold transition ${safeZoneMode === sz.id
                                       ? "bg-indigo-600 text-white shadow-sm"
                                       : "text-slate-400 hover:text-slate-200"
-                                  }`}
+                                    }`}
                                 >
                                   {sz.label}
                                 </button>
@@ -3779,11 +3904,10 @@ export default function HappyShortsApp() {
                                     setSelectedCandidateIdx(idx);
                                     handleRenderThumbnail(idx);
                                   }}
-                                  className={`relative cursor-pointer rounded-lg overflow-hidden border-2 aspect-[9/16] transition-all transform hover:scale-105 ${
-                                    selectedCandidateIdx === idx
+                                  className={`relative cursor-pointer rounded-lg overflow-hidden border-2 aspect-[9/16] transition-all transform hover:scale-105 ${selectedCandidateIdx === idx
                                       ? "border-indigo-500 ring-2 ring-indigo-500/50 shadow-md"
                                       : "border-slate-800 hover:border-slate-600 opacity-70 hover:opacity-100"
-                                  }`}
+                                    }`}
                                 >
                                   <img
                                     src={cand.preview_url}
@@ -3831,11 +3955,10 @@ export default function HappyShortsApp() {
                                     setThumbBadgeType(b.type as any);
                                     if (b.type !== "none") setThumbBadgeLabel(b.label);
                                   }}
-                                  className={`py-2 px-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${
-                                    isSelected
+                                  className={`py-2 px-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition ${isSelected
                                       ? "bg-slate-800 border-indigo-500 text-white shadow-sm"
                                       : "bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200"
-                                  }`}
+                                    }`}
                                 >
                                   <IconComponent className={`w-3.5 h-3.5 ${b.color}`} />
                                   <span>{b.label.split(" ")[0]}</span>
@@ -3922,11 +4045,10 @@ export default function HappyShortsApp() {
                                   setThumbStylePreset(s.id);
                                   handleRenderThumbnail(selectedCandidateIdx, s.id);
                                 }}
-                                className={`p-2 rounded-xl border text-left transition flex flex-col justify-between ${
-                                  thumbStylePreset === s.id
+                                className={`p-2 rounded-xl border text-left transition flex flex-col justify-between ${thumbStylePreset === s.id
                                     ? "bg-slate-800 border-indigo-500 text-white shadow-md ring-2 ring-indigo-500/50"
                                     : "bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700"
-                                }`}
+                                  }`}
                               >
                                 <div>
                                   <div className="flex items-center justify-between gap-1">
@@ -4017,11 +4139,10 @@ export default function HappyShortsApp() {
                   setCurrentStep(targetStep);
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold shrink-0 shadow-md flex items-center gap-1.5 transition ${
-                  isAlreadyThere
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold shrink-0 shadow-md flex items-center gap-1.5 transition ${isAlreadyThere
                     ? "bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 shadow-slate-900/50"
                     : "bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white shadow-indigo-600/30"
-                }`}
+                  }`}
                 title={
                   isAlreadyThere
                     ? "현재 진행 화면의 상단 진행 카드로 스크롤합니다."

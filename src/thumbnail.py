@@ -994,7 +994,6 @@ def generate_creator_thumbnail(
     is_source = (target_video == source_video_path)
     base_time = (start_time or 0.0) if is_source else 0.0
     clip_dur = duration or 30.0
-    sample_time = target_time if target_time is not None else (base_time + min(clip_dur * 0.25, 4.0))
 
     cap = cv2.VideoCapture(target_video)
     if not cap.isOpened():
@@ -1004,20 +1003,47 @@ def generate_creator_thumbnail(
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     video_dur = total_frames / fps if fps > 0 else 0.0
 
-    if video_dur > 0:
-        sample_time = max(0.0, min(sample_time, video_dur - 0.1))
+    best_frame = None
+    best_cutout = None
 
-    cap.set(cv2.CAP_PROP_POS_FRAMES, int(sample_time * fps))
-    ret, frame = cap.read()
-    if not ret or frame is None:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    if target_time is not None:
+        sample_time = max(0.0, min(target_time, video_dur - 0.1)) if video_dur > 0 else target_time
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(sample_time * fps))
         ret, frame = cap.read()
+        if ret and frame is not None:
+            best_frame = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            best_cutout = extract_subject_cutout(best_frame)
+    else:
+        # Automated pipeline mode: inspect multiple candidate timestamps across the clip
+        # to guarantee the hero presenter face with the largest, clearest cutout is selected
+        offsets = [0.20, 0.40, 0.65, 0.80, 0.10]
+        max_cutout_area = 0
+        for ratio in offsets:
+            s_time = base_time + (clip_dur * ratio)
+            if video_dur > 0:
+                s_time = max(0.0, min(s_time, video_dur - 0.1))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(s_time * fps))
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                continue
+            pil_f = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            cutout = extract_subject_cutout(pil_f)
+            if cutout is not None:
+                area = cutout.width * cutout.height
+                if area > max_cutout_area:
+                    max_cutout_area = area
+                    best_frame = pil_f
+                    best_cutout = cutout
+                    if area > (target_w * target_h * 0.18):  # Great hero shot found
+                        break
+            if best_frame is None:
+                best_frame = pil_f
     cap.release()
 
-    if not ret or frame is None:
-        raise RuntimeError(f"Failed to capture frame at {sample_time}s from {target_video}")
+    if best_frame is None:
+        raise RuntimeError(f"Failed to capture frame from {target_video}")
 
-    raw_frame_rgb = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    raw_frame_rgb = best_frame
 
     # 3. Create Layer 1: Background
     if ai_bg_path and Path(ai_bg_path).exists():
@@ -1045,7 +1071,7 @@ def generate_creator_thumbnail(
     canvas = Image.alpha_composite(canvas, wash)
 
     # 5. Create Layer 2: Subject Cutout & Themed Rim Light
-    cutout = extract_subject_cutout(raw_frame_rgb)
+    cutout = best_cutout if best_cutout is not None else extract_subject_cutout(raw_frame_rgb)
     if cutout is not None:
         if aspect_ratio == "16:9":
             scale = (target_h * 0.90) / cutout.height
