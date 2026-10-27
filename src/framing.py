@@ -179,10 +179,26 @@ def build_framing_filter(
 
     filter_prep = f"{delogo_prefix}{cg_prefix}"
 
-    # 3. Dynamic Punch-in Zoom (Submagic/CapCut 1.08x focal focus during explanation)
+    # 3. Dynamic Rhythmic Punch-in Zoom (CapCut/Submagic-style rhythmic focus cuts)
     zoom_filter = ""
     if enable_punch_in_zoom and dur >= 6.5:
-        zoom_filter = f"crop='if(between(t,{z_start},{z_end}),2*trunc(iw/2.16),iw)':'if(between(t,{z_start},{z_end}),2*trunc(ih/2.16),ih)':(iw-ow)/2:(ih-oh)/2,"
+        if dur >= 15.0:
+            # Multi-beat dynamic rhythm: alternates between normal and 1.09x focal punch
+            p1_end = round(min(7.5, dur * 0.32), 2)
+            p2_start = round(max(p1_end + 3.5, dur * 0.44), 2)
+            p2_end = round(min(p2_start + 6.0, dur * 0.72), 2)
+            p3_start = round(max(p2_end + 3.5, dur * 0.80), 2)
+            p3_end = round(max(p3_start + 3.0, dur - 0.5), 2)
+
+            zoom_cond = f"(between(t,2.2,{p1_end})+between(t,{p2_start},{p2_end})"
+            if dur >= 26.0:
+                zoom_cond += f"+between(t,{p3_start},{p3_end})"
+            zoom_cond += ")"
+            zoom_filter = f"crop='if(gt({zoom_cond},0),2*trunc(iw/2.18),iw)':'if(gt({zoom_cond},0),2*trunc(ih/2.18),ih)':(iw-ow)/2:(ih-oh)/2,"
+        else:
+            z_start = round(min(3.5, dur * 0.22), 2)
+            z_end = round(max(z_start + 3.0, dur * 0.75), 2)
+            zoom_filter = f"crop='if(between(t,{z_start},{z_end}),2*trunc(iw/2.18),iw)':'if(between(t,{z_start},{z_end}),2*trunc(ih/2.18),ih)':(iw-ow)/2:(ih-oh)/2,"
 
     # 3. 16:9 Landscape Video Canvas (1920x1080)
     if aspect_ratio == "16:9":

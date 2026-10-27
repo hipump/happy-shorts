@@ -18,14 +18,29 @@ echo "   Happy Shorts AI Studio (웹 GUI 대시보드)"
 echo "   100% 로컬 무료 구동 | Qwen2.5-14B & Whisper Large-v3-Turbo"
 echo "================================================================"
 
+# 기동 전 및 종료 시 포트 정리 함수
+free_port() {
+    local port=$1
+    local pids=$(lsof -ti :"$port" 2>/dev/null || true)
+    if [ -n "$pids" ]; then
+        kill -9 $pids 2>/dev/null || true
+    fi
+}
+
 # 종료 시 백엔드와 프론트엔드 프로세스 동시 종료
 cleanup() {
     echo ""
     echo "🛑 서버를 안전하게 종료합니다..."
     kill "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null || true
+    free_port 8000
+    free_port 3000
     exit 0
 }
 trap cleanup SIGINT SIGTERM
+
+# 기동 전 기존에 남아있는 좀비 포트 정리
+free_port 8000
+free_port 3000
 
 # 2. FastAPI 백엔드 서버 시작 (포트 8000)
 echo "🚀 1/2. Python FastAPI 백엔드 기동 중 (http://127.0.0.1:8000)..."

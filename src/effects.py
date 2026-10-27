@@ -2403,6 +2403,101 @@ def render_top_header(
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     img.save(output_path, "PNG")
+    return output_path
+
+def render_opening_punch_hook(
+    title: str,
+    hook_text: str,
+    output_path: str,
+    clip_idx: int = 1,
+    badge_label: str = "🔥 MUST WATCH",
+    canvas_w: int = 1080,
+    canvas_h: int = 1920
+) -> str:
+    """
+    Renders an impactful 0~2s center opening punchline hook card:
+    - Positioned right in the vertical optical center (y: 840 ~ 1080)
+    - Dark frosted card backdrop with glowing neon border
+    - Eyebrow pill chip badge on top
+    - Large 3D extrusion typography + yellow highlighter marker
+    - Instant attention grabber for the first 2 seconds of the Short
+    """
+    img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    f_black_68 = get_font(FONT_BLACK_HAN_SANS, 68)
+    f_black_52 = get_font(FONT_BLACK_HAN_SANS, 52)
+    f_pret_30 = get_font(FONT_PRETENDARD, 30)
+
+    line1, line2 = split_hook_headline(title, hook_text)
+    if not line1:
+        line1 = title if title else "놓치면 후회하는 핵심 명장면"
+    if not line2:
+        line2 = hook_text if hook_text else f"클립 #{clip_idx:02d} 지금 바로 확인!"
+
+    center_x = canvas_w // 2
+    center_y = canvas_h // 2 - 40
+
+    card_w = canvas_w - 120
+    card_h = 360
+    card_x0 = (canvas_w - card_w) // 2
+    card_y0 = center_y - card_h // 2
+    card_x1 = card_x0 + card_w
+    card_y1 = card_y0 + card_h
+
+    # Card background glow & shadow
+    for offset in range(12, 0, -3):
+        alpha = int(40 * (1 - offset / 12))
+        draw.rounded_rectangle(
+            [card_x0 - offset, card_y0 - offset, card_x1 + offset, card_y1 + offset],
+            radius=32 + offset,
+            fill=(0, 0, 0, alpha)
+        )
+
+    # Frosted dark slate card body
+    draw.rounded_rectangle(
+        [card_x0, card_y0, card_x1, card_y1],
+        radius=30,
+        fill=(15, 20, 32, 245),
+        outline=(255, 230, 0, 240),
+        width=4
+    )
+
+    # Top Eyebrow Chip inside card
+    badge_text = f"{badge_label} • CLIP #{clip_idx:02d}"
+    draw_pill_badge(
+        draw, center_y=card_y0 + 55, text=badge_text,
+        font=f_pret_30, fill_color=(230, 30, 45, 245), text_color=(255, 255, 255),
+        outline_color=(255, 100, 110, 220), outline_width=2, badge_h=52, pad_x=40
+    )
+
+    # Punchline Headline 1 (White Bold)
+    f_t1 = f_black_68
+    tb1 = f_t1.getbbox(line1)
+    max_w = card_w - 80
+    if tb1[2] - tb1[0] > max_w:
+        f_t1 = get_font(FONT_BLACK_HAN_SANS, max(42, int(68 * (max_w / (tb1[2] - tb1[0])))))
+    draw.text((center_x, card_y0 + 160), line1, font=f_t1, fill=(255, 255, 255), stroke_width=6, stroke_fill=(10, 15, 25), anchor="mm")
+
+    # Punchline Headline 2 (Yellow Highlight with Marker background)
+    f_t2 = f_black_52
+    tb2 = f_t2.getbbox(line2)
+    if tb2[2] - tb2[0] > max_w:
+        f_t2 = get_font(FONT_BLACK_HAN_SANS, max(36, int(52 * (max_w / (tb2[2] - tb2[0])))))
+        tb2 = f_t2.getbbox(line2)
+
+    # Yellow marker bar behind line2
+    m_w = (tb2[2] - tb2[0]) + 36
+    m_h = (tb2[3] - tb2[1]) + 16
+    m_x0 = center_x - m_w // 2
+    m_y0 = card_y0 + 260 - m_h // 2
+    draw.rounded_rectangle([m_x0, m_y0, m_x0 + m_w, m_y0 + m_h], radius=10, fill=(255, 230, 0, 240))
+    draw.text((center_x, card_y0 + 260), line2, font=f_t2, fill=(15, 20, 30), stroke_width=0, anchor="mm")
+
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    img.save(output_path, "PNG")
+    return output_path
+
 def render_keynote_stat_pill(
     metric_text: str,
     label_text: str = "KEY METRIC • 실전 핵심 가치",

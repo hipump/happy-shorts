@@ -85,11 +85,12 @@ async def emit_job_event(job_id: str, data: dict):
 # Pydantic Models
 class AnalyzeRequest(BaseModel):
     source: str = Field(..., description="유튜브 URL 또는 로컬 파일 경로")
-    clips_count: int = Field(default=3, description="분석할 하이라이트 후보 개수")
+    clips_count: int = Field(default=0, description="분석할 하이라이트 후보 개수 (0=자동 최적 추천, 1~10=수동 지정)")
     min_dur: int = Field(default=30, description="최소 쇼츠 길이 (초)")
     max_dur: int = Field(default=50, description="최대 쇼츠 길이 (초)")
     whisper_model: str = Field(default="large-v3-turbo", description="Whisper STT 모델")
     llm_model: str = Field(default="qwen2.5:14b", description="Ollama LLM 모델")
+    genre: str = Field(default="general", description="콘텐츠 장르 (general, info, interview, education, gaming, vlog)")
 
 class RenderRequest(BaseModel):
     source: str = Field(..., description="원본 영상 소스")
@@ -111,6 +112,7 @@ class RenderRequest(BaseModel):
     bounce_animation: bool = Field(default=True, description="글자별 탄성 바운스 애니메이션 (Spring Bounce)")
     hook_variant_type: str = Field(default="default", description="선택된 훅 헤드라인 타입 (default, curiosity, urgency, benefit)")
     enable_stat_pill: bool = Field(default=True, description="키노트 글래스모피즘 수치 카드 팝업")
+    enable_opening_hook: bool = Field(default=True, description="첫 0~2초 오프닝 펀치라인 훅 카드 연출")
     seamless_loop: bool = Field(default=True, description="무한 반복 시청을 위한 오디오 마이크로 크로스페이드")
     thumbnail_preset: Optional[str] = Field(default=None, description="썸네일 폰트 및 비주얼 스타일 프리셋 (auto, blockbuster, jelly_pop, ink_splatter, cyber_neon, gold_luxury, spooky, variety_show, washi_vlog)")
     target_filename: Optional[str] = None
@@ -229,6 +231,22 @@ def list_audio_presets():
             "스마트 키워드 자막 차임 딩 (숫자/바이럴 단어 강조음)"
         ]
     }
+
+@app.get("/api/genres")
+def list_genres():
+    """Returns available content genres with Korean names and descriptions."""
+    from src.highlighter import GENRE_PROFILES
+    return {
+        "genres": [
+            {
+                "id": k,
+                "name": v["name_ko"],
+                "description": v["priority_desc"].splitlines()[0].split("(")[0].strip()
+            }
+            for k, v in GENRE_PROFILES.items()
+        ]
+    }
+
 @app.get("/api/status")
 def get_system_status():
     """Checks local Ollama service, GPU/device and default models."""
@@ -526,7 +544,7 @@ async def run_analysis_task(job_id: str, req: AnalyzeRequest):
             }
         })
 
-        detect_count = max(1, req.clips_count)
+        detect_count = req.clips_count if req.clips_count > 0 else 0
         target_dur = (req.min_dur, req.max_dur)
 
         hl_cb = make_progress_cb(3)
@@ -535,7 +553,7 @@ async def run_analysis_task(job_id: str, req: AnalyzeRequest):
         async def llm_heartbeat():
             current_p = 71
             heartbeat_msgs = [
-                f"Ollama LLM ({req.llm_model}) 심층 문맥 추론 및 바이럴 구간 탐색 중...",
+                f"Ollama LLM ({req.llm_model}) [{req.genre}] 심층 문맥 추론 및 바이럴 구간 탐색 중...",
                 "OpusClip 4기둥 (후킹력, 스토리 흐름, 정보 가치, 트렌드성) 채점 중...",
                 "시청 지속 시간(AVD) 극대화 및 이탈 방지 구간 탐색 중...",
                 "한국어 문장 어미(~다, ~요, ~죠) 문법적 경계 스냅 연산 중...",
@@ -568,7 +586,8 @@ async def run_analysis_task(job_id: str, req: AnalyzeRequest):
                     max_count=detect_count,
                     target_duration_range=target_dur,
                     video_path=metadata.local_path,
-                    callback=hl_cb
+                    callback=hl_cb,
+                    genre=req.genre
                 )
             )
         finally:
@@ -762,6 +781,7 @@ async def run_render_task(job_id: str, req: RenderRequest):
                     bounce_animation=req.bounce_animation,
                     hook_variant_type=req.hook_variant_type,
                     enable_stat_pill=req.enable_stat_pill,
+                    enable_opening_hook=req.enable_opening_hook,
                     seamless_loop=req.seamless_loop,
                     callback=c_b
                 )

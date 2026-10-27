@@ -1,6 +1,6 @@
 import json
 import re
-from typing import List, Optional, Callable
+from typing import List, Optional, Callable, Dict, Any
 import ollama
 from src.models import Transcript, Highlight
 
@@ -471,21 +471,130 @@ def fallback_heuristic_highlights(
 
     return results
 
+GENRE_PROFILES: Dict[str, Dict[str, str]] = {
+    "general": {
+        "name_ko": "종합 / 일반",
+        "priority_desc": (
+            "1. STRONG HOOK & CLEAR STORY (Highest Priority, 95~99 Score):\n"
+            "   - First 3 seconds stopping power, clear narrative tension, and satisfying resolution.\n"
+            "2. SURPRISING FACT OR TWIST (High Priority, 90~95 Score):\n"
+            "   - Intriguing revelation or perspective shift that viewers will want to share.\n"
+            "3. COUNTER-INTUITIVE TRUTH (88~93 Score):\n"
+            "   - Breaking misconceptions or revealing what most people get wrong."
+        ),
+        "cliche_penalty": "Boring textbook knowledge, slow intros, or unengaging chatter with no clear point."
+    },
+    "info": {
+        "name_ko": "정보 / 리뷰 / 꿀팁",
+        "priority_desc": (
+            "1. EXTREME FINANCIAL / NUMBER CONTRAST (Highest Priority, 95~99 Score):\n"
+            "   - Huge numerical contrasts (e.g. '70만원 vs 4만원', '100만원 손해', '10배 절약', '3초 만에 해결').\n"
+            "2. LOSS AVERSION & RIP-OFF PREVENTION (High Priority, 90~95 Score):\n"
+            "   - Secrets to avoid getting scammed or overcharged (e.g. '호갱 탈출법', '위약금 폭탄 피하기').\n"
+            "3. INSTANT ACTIONABLE BENEFIT (88~93 Score):\n"
+            "   - Something the viewer can test or apply immediately after watching."
+        ),
+        "cliche_penalty": "Boring textbook advice, obvious common sense everyone already knows."
+    },
+    "interview": {
+        "name_ko": "인터뷰 / 대담 / 토크",
+        "priority_desc": (
+            "1. RAW CONFESSION & LIFE LESSON (Highest Priority, 95~99 Score):\n"
+            "   - Shockingly honest personal admission, intense failure-to-success story, or emotional breakthrough.\n"
+            "2. CONTRARIAN PHILOSOPHY (High Priority, 90~95 Score):\n"
+            "   - Unconventional mindset that challenges popular belief (e.g. '열심히 사는 사람이 망하는 이유').\n"
+            "3. MEMORABLE PUNCHLINE QUOTE (88~93 Score):\n"
+            "   - A single sentence so profound that viewers comment and save the clip."
+        ),
+        "cliche_penalty": "Polite greetings, generic small talk, or dry resume recitations."
+    },
+    "education": {
+        "name_ko": "교육 / 지식 / 강의",
+        "priority_desc": (
+            "1. 60-SECOND INTUITIVE PRINCIPLE (Highest Priority, 95~99 Score):\n"
+            "   - Explaining a difficult complex concept with brilliant clarity in under 1 minute.\n"
+            "2. PRACTICAL WORK / EXAM CHEAT CODE (High Priority, 90~95 Score):\n"
+            "   - Secret shortcut or framework that boosts productivity or scores instantly.\n"
+            "3. MIND-BLOWING SCIENTIFIC / HISTORICAL INSIGHT (88~93 Score):\n"
+            "   - 'Wait, that's why?' moments that trigger instant awe and comments."
+        ),
+        "cliche_penalty": "Reading definitions off slides, monotone theoretical rambling without examples."
+    },
+    "gaming": {
+        "name_ko": "게임 / 스트리밍 / e스포츠",
+        "priority_desc": (
+            "1. INSANE CLUTCH OR COMEBACK (Highest Priority, 95~99 Score):\n"
+            "   - High-dopamine 1v5 clutch, miracle play, or unexpected victory from 1% chance.\n"
+            "2. EXPLOSIVE REACTION & PEAK LAUGHTER (High Priority, 90~95 Score):\n"
+            "   - Loud shout, genuine scream, contagious laughter, or hilarious game physics bug.\n"
+            "3. META-BREAKING STRATEGY OR TIP (88~93 Score):\n"
+            "   - Hidden game mechanic or trick that other players don't know yet."
+        ),
+        "cliche_penalty": "Quiet looting, waiting in lobby, or repetitive farming with no speech/action."
+    },
+    "vlog": {
+        "name_ko": "일상 / 브이로그 / 라이프",
+        "priority_desc": (
+            "1. RELATABLE HUMOROUS EPISODE (Highest Priority, 95~99 Score):\n"
+            "   - Hilarious relatable mistake, awkward encounter, or couple/family banter.\n"
+            "2. HIDDEN GEM SPOT / FOOD REVELATION (High Priority, 90~95 Score):\n"
+            "   - Secret travel spot, insane value restaurant, or life-changing household hack.\n"
+            "3. AESTHETIC SATISFYING MOMENT (88~93 Score):\n"
+            "   - ASMR food moment, satisfying clean/cooking, or heartwarming emotional connection."
+        ),
+        "cliche_penalty": "Waking up in silence, walking without narrative, or generic b-roll montage."
+    }
+}
+
+def calculate_optimal_clip_count(duration_seconds: float) -> int:
+    """
+    AlphaCut-style duration-proportional clip discovery formula:
+    - Under 2 mins (<= 120s): 1 clip
+    - 2 to 4 mins (120~240s): 2 clips
+    - 4 to 8 mins (240~480s): 3 clips
+    - 8 to 15 mins (480~900s): 4~5 clips
+    - 15 to 30 mins (900~1800s): 6~7 clips
+    - Over 30 mins (> 1800s): 8~10 clips (capped at 10)
+    """
+    if duration_seconds <= 120.0:
+        return 1
+    elif duration_seconds <= 240.0:
+        return 2
+    elif duration_seconds <= 480.0:
+        return 3
+    elif duration_seconds <= 900.0:
+        return max(4, min(5, int(duration_seconds // 180)))
+    elif duration_seconds <= 1800.0:
+        return max(5, min(7, int(duration_seconds // 240)))
+    else:
+        return max(7, min(10, int(duration_seconds // 300)))
+
 def detect_highlights(
     transcript: Transcript,
     model_name: Optional[str] = None,
     max_count: int = 1,
     target_duration_range: tuple[int, int] = (30, 50),
     video_path: Optional[str] = None,
-    callback: Optional[Callable[[int, str], None]] = None
+    callback: Optional[Callable[[int, str], None]] = None,
+    genre: str = "general"
 ) -> List[Highlight]:
     """
     Detect the most engaging shorts highlight segments using Ollama.
     Guarantees every clip is between min_dur (30s) and max_dur (50s).
     Evaluates clips using Opus Clip's 4-Pillar Virality Scoring model.
+    Dynamically tunes prompts based on content Genre (Niche Intelligence).
     """
     active_model = resolve_optimal_llm(model_name)
     min_dur, max_dur = target_duration_range
+
+    # Auto clip count calculation if 0 or negative
+    if max_count <= 0:
+        max_count = calculate_optimal_clip_count(transcript.duration)
+
+    active_genre = GENRE_PROFILES.get(str(genre).lower().strip(), GENRE_PROFILES["general"])
+    genre_name = active_genre["name_ko"]
+    genre_priority = active_genre["priority_desc"]
+    genre_cliche = active_genre["cliche_penalty"]
 
     if transcript.duration <= 60.0:
         pts = summarize_clip_content(transcript, 0.0, transcript.duration, "쇼츠 클립", model_name=model_name)
@@ -504,28 +613,22 @@ def detect_highlights(
         ]
 
     if callback:
-        callback(66, f"AI 문맥 분석 시작 (전체 {len(transcript.segments)}개 대화 세그먼트 벡터 구조화)...")
+        callback(66, f"AI [{genre_name}] 문맥 분석 시작 (전체 {len(transcript.segments)}개 대화 세그먼트)...")
 
     formatted_text = format_transcript_for_llm(transcript)
 
     system_prompt = (
-        "You are an elite YouTube Shorts & TikTok PD creating viral million-view clips.\n"
-        "Analyze the dialogue transcript and choose the best viral highlight moments for Shorts.\n\n"
-        "🔥 VIRAL KILLER FACTOR RANKING (PRIORITIZE THESE):\n"
-        "1. EXTREME FINANCIAL / NUMBER CONTRAST (Highest Priority, 95~99 Score):\n"
-        "   - Clips with huge numerical contrasts (e.g. '70만원 vs 4만원', '100만원 손해', '10배 절약', '3초 만에 해결').\n"
-        "   - Immediately grabs dopamine and forces the viewer to stay.\n"
-        "2. LOSS AVERSION & RIP-OFF PREVENTION (High Priority, 90~95 Score):\n"
-        "   - Secrets to avoid getting scammed or overcharged (e.g. '카센터 눈탱이 방지', '보험료 할증 폭탄 피하는 법').\n"
-        "3. COUNTER-INTUITIVE TRUTHS & EXCLUSIVE SECRETS (High Priority, 88~93 Score):\n"
-        "   - Things most people do wrong (e.g. '사고 났을 때 절대 보험 먼저 부르지 마세요').\n"
-        "⛔ CLICHÉ & COMMON SENSE PENALTY (AVOID OR SCORE 60~72):\n"
-        "   - Boring textbook advice or public service announcements (e.g. '사고 나면 비상등 켜고 안전지대로 대피하고 112 신고').\n"
-        "   - Everyone already knows this! Viewers swipe away within 1 second. DO NOT pick this as #1!\n\n"
+        f"You are an elite YouTube Shorts & TikTok PD specialized in '{genre_name}' content creating viral million-view clips.\n"
+        f"Analyze the dialogue transcript and choose the best viral highlight moments for Shorts in the '{genre_name}' category.\n\n"
+        f"🔥 VIRAL KILLER FACTOR RANKING FOR [{genre_name.upper()}]:\n"
+        f"{genre_priority}\n\n"
+        f"⛔ CLICHÉ & COMMON SENSE PENALTY:\n"
+        f"   - {genre_cliche}\n"
+        f"   - Viewers swipe away within 1 second. DO NOT pick clichés as #1!\n\n"
         "OPUS CLIP 4-PILLAR VIRALITY SCORING (Total: 60 ~ 99):\n"
         "1. Hook (0~30): First 3 seconds stopping power.\n"
         "2. Flow (0~25): Standalone, coherent, punchy story without boring pauses.\n"
-        "3. Value (0~25): High practical takeaway, money saved, or secret tip.\n"
+        "3. Value (0~25): High practical takeaway, emotional resonance, or secret tip.\n"
         "4. Trend (0~20): High curiosity and shareability for a wide audience.\n\n"
         "CRITICAL RULES:\n"
         f"1. Target length: Highlight clips MUST span {min_dur} to {max_dur} seconds.\n"
@@ -541,7 +644,7 @@ def detect_highlights(
     )
 
     user_prompt = (
-        f"다음 자막 대본을 심층 분석하여 바이럴 가능성이 가장 높은 쇼츠 클립을 서로 다른 시간대에서 "
+        f"다음 자막 대본을 심층 분석하여 '{genre_name}' 장르에 가장 적합하고 바이럴 가능성이 높은 쇼츠 클립을 서로 다른 시간대에서 "
         f"정확히 {max_count}개 선정해 JSON 'highlights' 배열에 담아 응답하세요. "
         f"(반드시 {max_count}개의 클립을 모두 작성해야 합니다):\n\n{formatted_text}"
     )
@@ -674,24 +777,45 @@ def detect_highlights(
             if callback and len(highlights) == 0:
                 callback(92, "OpusClip 4기둥 바이럴 채점 및 CTR 훅 타이포그래피 생성 중...")
 
-            # Viral Keyword & Financial Contrast Detection
+            # Genre-Adaptive Viral Keyword & Contrast Detection
             all_clip_text = " ".join(seg.text for seg in transcript.segments if seg.start >= (s_start - 0.2) and seg.end <= (s_end + 0.2))
             has_money_contrast = bool(re.search(r'(\d+만\s*원|\d+원|70만|4만|100만|비용|수리비|견적|환불|할증|절약|\d+(\.\d+)?\s*(배|%|프로))', all_clip_text))
             has_loss_aversion = any(kw in all_clip_text for kw in ["눈탱이", "호구", "손해", "실수", "당하지", "사기", "비밀", "꿀팁", "아끼", "절대", "주의", "편해", "핵심", "중요"])
-            is_boring_cliche = any(kw in all_clip_text for kw in ["안전지대", "가드레일", "삼각대", "대피", "112", "신고"]) and not has_money_contrast
+            
+            # Genre-specific keyword hooks
+            has_interview_insight = any(kw in all_clip_text for kw in ["사실은", "실패", "인생", "성공", "철학", "이유", "비밀", "깨달", "마음", "후회", "결국"])
+            has_edu_insight = any(kw in all_clip_text for kw in ["핵심", "원리", "개념", "정리", "공식", "차이", "주의", "포인트", "방법", "기준"])
+            has_gaming_peak = any(kw in all_clip_text for kw in ["대박", "미쳤", "클러치", "역전", "레전드", "이겼", "나이스", "각", "킬", "와우"])
+            has_vlog_moment = any(kw in all_clip_text for kw in ["진짜", "대박", "추천", "맛집", "일상", "행복", "웃겨", "재밌", "힐링", "좋아"])
+
+            genre_key = str(genre).lower().strip()
+            if genre_key == "info":
+                genre_match_bonus = (5 if has_money_contrast else 0) + (4 if has_loss_aversion else 0)
+            elif genre_key == "interview":
+                genre_match_bonus = (6 if has_interview_insight else 2) + (3 if has_curiosity_hook else 0)
+            elif genre_key == "education":
+                genre_match_bonus = (6 if has_edu_insight else 2) + (3 if has_curiosity_hook else 0)
+            elif genre_key == "gaming":
+                genre_match_bonus = (6 if has_gaming_peak else 2) + (3 if wpm >= 140 else 0)
+            elif genre_key == "vlog":
+                genre_match_bonus = (5 if has_vlog_moment else 2) + (3 if has_curiosity_hook else 0)
+            else:
+                genre_match_bonus = (4 if (has_money_contrast or has_interview_insight or has_edu_insight) else 2)
+
+            is_boring_cliche = any(kw in all_clip_text for kw in ["안전지대", "가드레일", "삼각대", "대피", "112", "신고"]) and not has_money_contrast and genre_key == "info"
 
             raw_v = item.get("virality_score")
             base_llm = int(raw_v) if (raw_v and str(raw_v).isdigit() and int(raw_v) >= 50) else 82
 
             # Dynamic multi-factor scoring with extreme contrast reward & cliché penalty
-            hook_bonus = (6 if has_money_contrast else (3 if has_curiosity_hook else 0))
-            value_bonus = (5 if has_loss_aversion else 2) + (3 if has_money_contrast else 0)
+            hook_bonus = (4 if has_curiosity_hook else 1) + min(4, genre_match_bonus // 2)
+            value_bonus = min(8, genre_match_bonus)
             cliche_penalty = -14 if is_boring_cliche else 0
 
             hook_sc = min(30, max(18, 20 + hook_bonus))
             flow_sc = min(25, max(16, 19 + (4 if 110 <= wpm <= 200 else 1)))
             value_sc = min(25, max(16, 18 + value_bonus))
-            trend_sc = min(20, max(14, 15 + (3 if has_money_contrast or has_loss_aversion else 0)))
+            trend_sc = min(20, max(14, 15 + (3 if genre_match_bonus >= 4 else 1)))
 
             v_score = hook_sc + flow_sc + value_sc + trend_sc + cliche_penalty
             if base_llm:

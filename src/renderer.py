@@ -10,7 +10,8 @@ from src.effects import (
     render_template_background,
     render_top_header,
     generate_subtitle_track,
-    render_keynote_stat_pill
+    render_keynote_stat_pill,
+    render_opening_punch_hook
 )
 from src.audio import build_audio_pipeline
 from src.inpainting import LamaInpainter, inpaint_video_subtitles
@@ -48,6 +49,7 @@ def render_short(
     bounce_animation: bool = True,
     hook_variant_type: str = "default",
     enable_stat_pill: bool = True,
+    enable_opening_hook: bool = True,
     seamless_loop: bool = True,
     callback: Optional[Callable[[int, str], None]] = None,
     **kwargs
@@ -323,6 +325,30 @@ def render_short(
 
             filter_chains.append(f"[{current_label}][{sub_input_idx}:v]overlay=0:0:shortest=1[v_sub]")
             current_label = "v_sub"
+
+    # 3.4. Center Opening Punchline Hook Card (0~2.2s High-impact attention grabber)
+    if enable_opening_hook and not is_landscape and duration >= 5.0:
+        hook_png = str(clip_temp_dir / "opening_hook.png")
+        render_opening_punch_hook(
+            title=highlight.title,
+            hook_text=highlight.hook_text,
+            output_path=hook_png,
+            clip_idx=highlight.id,
+            badge_label=template.badge_prefix if getattr(template, "badge_prefix", None) else "🔥 MUST WATCH",
+            canvas_w=canvas_w,
+            canvas_h=canvas_h
+        )
+        hook_dur = 2.2
+        input_args.extend(["-loop", "1", "-t", str(hook_dur), "-i", hook_png])
+        hook_idx = next_input_idx
+        next_input_idx += 1
+        h_fade = 0.35
+        h_out_fade_st = round(hook_dur - h_fade, 2)
+        filter_chains.append(
+            f"[{hook_idx}:v]format=rgba,fade=t=out:st={h_out_fade_st}:d={h_fade}:alpha=1[v_hook_fade];"
+            f"[{current_label}][v_hook_fade]overlay=0:0:enable='lte(t,{hook_dur})'[v_hooked]"
+        )
+        current_label = "v_hooked"
 
     # 3.5. Apple Keynote Glassmorphic Stat Pill Overlay (High-impact metric highlight)
     if enable_stat_pill and duration >= 8.0:

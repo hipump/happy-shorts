@@ -76,7 +76,8 @@ export default function HappyShortsApp() {
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [localPath, setLocalPath] = useState("");
   const [selectedRecent, setSelectedRecent] = useState<RecentVideo | null>(null);
-  const [clipsCount, setClipsCount] = useState<number>(3);
+  const [clipsCount, setClipsCount] = useState<number>(0);
+  const [selectedGenre, setSelectedGenre] = useState<string>("general");
   const [minDur, setMinDur] = useState<number>(30);
   const [maxDur, setMaxDur] = useState<number>(50);
 
@@ -100,6 +101,7 @@ export default function HappyShortsApp() {
   const [smartKeywords, setSmartKeywords] = useState<boolean>(true);
   const [bounceAnimation, setBounceAnimation] = useState<boolean>(true);
   const [enableStatPill, setEnableStatPill] = useState<boolean>(true);
+  const [enableOpeningHook, setEnableOpeningHook] = useState<boolean>(true);
   const [seamlessLoop, setSeamlessLoop] = useState<boolean>(true);
 
   // Viral Retention & A/B Hook Testing
@@ -651,6 +653,7 @@ export default function HappyShortsApp() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           source: src,
+          genre: selectedGenre,
           clips_count: clipsCount,
           min_dur: minDur,
           max_dur: maxDur,
@@ -785,6 +788,7 @@ export default function HappyShortsApp() {
           bounce_animation: bounceAnimation,
           hook_variant_type: selectedHookVariants[targetHighlightsWithVariants[0]?.id] || "default",
           enable_stat_pill: enableStatPill,
+          enable_opening_hook: enableOpeningHook,
           seamless_loop: seamlessLoop,
           thumbnail_preset: selectedThumbnailPreset === "auto" ? null : selectedThumbnailPreset,
         }),
@@ -1223,13 +1227,59 @@ export default function HappyShortsApp() {
                       </div>
                     </div>
 
+                    {/* Genre Selection */}
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300 flex items-center justify-between mb-2">
+                        <span>콘텐츠 장르 (AI 타겟 최적화)</span>
+                        <span className="text-emerald-400 font-bold text-[11px]">
+                          {selectedGenre === "general" && "🌐 종합/일반"}
+                          {selectedGenre === "info" && "💡 정보/꿀팁"}
+                          {selectedGenre === "interview" && "🎙️ 인터뷰/토크"}
+                          {selectedGenre === "education" && "📚 강의/교육"}
+                          {selectedGenre === "gaming" && "🎮 게임/플레이"}
+                          {selectedGenre === "vlog" && "🎬 브이로그/일상"}
+                        </span>
+                      </label>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[
+                          { id: "general", label: "종합/일반", icon: "🌐" },
+                          { id: "info", label: "정보/꿀팁", icon: "💡" },
+                          { id: "interview", label: "인터뷰", icon: "🎙️" },
+                          { id: "education", label: "강의/교육", icon: "📚" },
+                          { id: "gaming", label: "게임/플레이", icon: "🎮" },
+                          { id: "vlog", label: "브이로그", icon: "🎬" },
+                        ].map((g) => (
+                          <button
+                            key={g.id}
+                            type="button"
+                            onClick={() => setSelectedGenre(g.id)}
+                            className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold border transition flex items-center justify-center gap-1.5 ${selectedGenre === g.id
+                                ? "bg-emerald-600/20 border-emerald-500 text-emerald-300 shadow-sm"
+                                : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
+                              }`}
+                          >
+                            <span>{g.icon}</span>
+                            <span>{g.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     <div>
                       <label className="text-xs font-semibold text-slate-300 flex items-center justify-between mb-2">
                         <span>후보 추출 개수</span>
-                        <span className="text-indigo-400 font-bold">{clipsCount}개 후보</span>
+                        <span className="text-indigo-400 font-bold">
+                          {clipsCount === 0 ? "⚡ 자동 (길이 비례 최적 계산)" : `${clipsCount}개 후보`}
+                        </span>
                       </label>
-                      <div className="flex gap-2">
-                        {[1, 2, 3, 5].map((cnt) => (
+                      <div className="flex gap-1.5">
+                        {[
+                          { cnt: 0, label: "⚡ 자동" },
+                          { cnt: 1, label: "1개" },
+                          { cnt: 2, label: "2개" },
+                          { cnt: 3, label: "3개" },
+                          { cnt: 5, label: "5개" },
+                        ].map(({ cnt, label }) => (
                           <button
                             key={cnt}
                             type="button"
@@ -1239,7 +1289,7 @@ export default function HappyShortsApp() {
                                 : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
                               }`}
                           >
-                            {cnt}개
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -1745,6 +1795,32 @@ export default function HappyShortsApp() {
                           >
                             <span>{seamlessLoop ? "🔁 무한 루프 싱크" : "일반 컷"}</span>
                             <div className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition ${seamlessLoop ? "bg-violet-500 justify-end" : "bg-slate-800 justify-start"}`}>
+                              <div className="bg-white w-2.5 h-2.5 rounded-full shadow" />
+                            </div>
+                          </button>
+                        </div>
+
+                        {/* 5. Opening Punch Hook Card */}
+                        <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex flex-col justify-between gap-2">
+                          <div>
+                            <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                              0~2초 오프닝 펀치 훅
+                            </span>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              시작 2초 이탈 방지 3D 글래스 훅 카드 오버레이
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setEnableOpeningHook(!enableOpeningHook)}
+                            className={`w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center justify-between ${enableOpeningHook
+                                ? "bg-cyan-500/15 border-cyan-500/50 text-cyan-300"
+                                : "bg-slate-950 border-slate-800 text-slate-500"
+                              }`}
+                          >
+                            <span>{enableOpeningHook ? "⚡ 펀치 훅 활성화" : "카드 끄기"}</span>
+                            <div className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition ${enableOpeningHook ? "bg-cyan-500 justify-end" : "bg-slate-800 justify-start"}`}>
                               <div className="bg-white w-2.5 h-2.5 rounded-full shadow" />
                             </div>
                           </button>
@@ -2632,6 +2708,11 @@ export default function HappyShortsApp() {
                                 {seamlessLoop && (
                                   <span className="px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-violet-300 text-[10px]">
                                     🔁 무한 루프
+                                  </span>
+                                )}
+                                {enableOpeningHook && (
+                                  <span className="px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-[10px]">
+                                    ⚡ 0~2초 펀치 훅
                                   </span>
                                 )}
                               </div>
