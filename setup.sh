@@ -167,47 +167,39 @@ else
 fi
 
 # Node.js & npm (Next.js 웹 UI 구동)
-if ! command -v node &>/dev/null || ! command -v npm &>/dev/null; then
-    log_info "Node.js 초고속 설치 중 (공식 네이티브 완제품 바이너리)..."
-    INSTALLED_NODE=0
+CHECK_NODE_OK=0
+if node -v &>/dev/null && npm -v &>/dev/null; then
+    CHECK_NODE_OK=1
+fi
 
-    # 1순위: Apple Silicon(M시리즈) 공식 완제품 바이너리 (의존성 컴파일 없는 3초 설치)
-    if [ "$ARCH" = "arm64" ]; then
-        TMP_NODE="/tmp/node_dl_$$"
-        mkdir -p "$TMP_NODE"
-        if curl -fsSL "https://nodejs.org/dist/v22.11.0/node-v22.11.0-darwin-arm64.tar.gz" -o "$TMP_NODE/node.tar.gz"; then
-            mkdir -p "$TMP_NODE/pkg"
-            tar -xzf "$TMP_NODE/node.tar.gz" -C "$TMP_NODE/pkg" --strip-components=1
-            TARGET_BIN_DIR="/opt/homebrew/bin"
-            [ ! -d "$TARGET_BIN_DIR" ] && TARGET_BIN_DIR="/usr/local/bin"
-            [ ! -d "$TARGET_BIN_DIR" ] && TARGET_BIN_DIR="$HOME/.local/bin"
-            mkdir -p "$TARGET_BIN_DIR"
-            cp -rf "$TMP_NODE/pkg/bin/"* "$TARGET_BIN_DIR/" 2>/dev/null || sudo cp -rf "$TMP_NODE/pkg/bin/"* "$TARGET_BIN_DIR/"
-            if [ -d "$TMP_NODE/pkg/lib" ]; then
-                TARGET_LIB_DIR="/opt/homebrew/lib"
-                [ ! -d "$TARGET_LIB_DIR" ] && TARGET_LIB_DIR="/usr/local/lib"
-                [ ! -d "$TARGET_LIB_DIR" ] && TARGET_LIB_DIR="$HOME/.local/lib"
-                mkdir -p "$TARGET_LIB_DIR"
-                cp -rf "$TMP_NODE/pkg/lib/"* "$TARGET_LIB_DIR/" 2>/dev/null || sudo cp -rf "$TMP_NODE/pkg/lib/"* "$TARGET_LIB_DIR/"
-            fi
-            if command -v node &>/dev/null; then
-                INSTALLED_NODE=1
-                log_success "Node.js 공식 네이티브 바이너리 설치 완료 ($(node -v) / npm $(npm -v))"
-            fi
+if [ "$CHECK_NODE_OK" -eq 0 ]; then
+    log_info "Node.js 및 npm 초고속 설치 중 (공식 macOS 완제품 PKG)..."
+    
+    # 기존 손상된 Homebrew npm/node 스크립트 정리
+    if [ -f "/opt/homebrew/bin/npm" ]; then
+        if ! /opt/homebrew/bin/npm -v &>/dev/null; then
+            sudo rm -f /opt/homebrew/bin/npm /opt/homebrew/bin/npx 2>/dev/null || rm -f /opt/homebrew/bin/npm /opt/homebrew/bin/npx 2>/dev/null || true
         fi
-        rm -rf "$TMP_NODE"
     fi
 
-    # 2순위: Intel Mac 또는 다운로드 실패 시 Homebrew 백업
-    if [ "$INSTALLED_NODE" -eq 0 ]; then
-        log_info "Homebrew를 통해 Node.js 패키지를 설치합니다..."
-        NONINTERACTIVE=1 brew install node || true
+    # 1순위: 공식 macOS 완제품 PKG 인스톨러 (컴파일 없음, 심볼릭 모듈 깨짐 방지)
+    TMP_NODE="/tmp/node_install_$$.pkg"
+    if curl -fsSL "https://nodejs.org/dist/v22.11.0/node-v22.11.0.pkg" -o "$TMP_NODE"; then
+        sudo installer -pkg "$TMP_NODE" -target / 2>/dev/null || installer -pkg "$TMP_NODE" -target / 2>/dev/null || true
+        rm -f "$TMP_NODE"
     fi
 
-    if command -v node &>/dev/null; then
+    # Homebrew bin 디렉토리 경로에도 심볼릭 링크 연결 보장
+    if [ -d "/opt/homebrew/bin" ]; then
+        [ -x "/usr/local/bin/node" ] && (sudo ln -sf /usr/local/bin/node /opt/homebrew/bin/node 2>/dev/null || ln -sf /usr/local/bin/node /opt/homebrew/bin/node 2>/dev/null || true)
+        [ -x "/usr/local/bin/npm" ] && (sudo ln -sf /usr/local/bin/npm /opt/homebrew/bin/npm 2>/dev/null || ln -sf /usr/local/bin/npm /opt/homebrew/bin/npm 2>/dev/null || true)
+        [ -x "/usr/local/bin/npx" ] && (sudo ln -sf /usr/local/bin/npx /opt/homebrew/bin/npx 2>/dev/null || ln -sf /usr/local/bin/npx /opt/homebrew/bin/npx 2>/dev/null || true)
+    fi
+
+    if node -v &>/dev/null && npm -v &>/dev/null; then
         log_success "Node.js 준비 완료 ($(node -v) / npm $(npm -v))"
     else
-        log_error "Node.js 설치에 실패했습니다."
+        log_error "Node.js / npm 설치에 실패했습니다. 수동으로 https://nodejs.org 에서 설치해 주세요."
         exit 1
     fi
 else
