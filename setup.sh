@@ -126,10 +126,11 @@ fi
 
 # FFmpeg (영상/오디오 처리 핵심 엔진)
 if ! command -v ffmpeg &>/dev/null; then
-    log_info "FFmpeg 설치 중 (brew install ffmpeg)..."
-    if ! (NONINTERACTIVE=1 brew install ffmpeg); then
-        log_warn "Homebrew 컴파일 중단 감지 (macOS 14 의존성 이슈 등)."
-        log_info "Apple Silicon 최적화 정적 바이너리(FFmpeg Native ARM64)를 즉시 직접 다운로드합니다..."
+    log_info "FFmpeg 초고속 설치 중 (의존성 컴파일 없는 완제품 네이티브 바이너리)..."
+    INSTALLED_FFMPEG=0
+
+    # 1순위: Apple Silicon(M시리즈) 초고속 완제품 바이너리 다운로드 (3초 완료)
+    if [ "$ARCH" = "arm64" ]; then
         TMP_FF="/tmp/ffmpeg_dl_$$"
         mkdir -p "$TMP_FF"
         if curl -fsSL "https://github.com/Tyrrrz/FFmpegBin/releases/latest/download/ffmpeg-osx-arm64.zip" -o "$TMP_FF/ff.zip"; then
@@ -141,13 +142,22 @@ if ! command -v ffmpeg &>/dev/null; then
             cp -f "$TMP_FF/ffmpeg" "$TMP_FF/ffprobe" "$TARGET_BIN_DIR/" 2>/dev/null || sudo cp -f "$TMP_FF/ffmpeg" "$TMP_FF/ffprobe" "$TARGET_BIN_DIR/"
             chmod +x "$TARGET_BIN_DIR/ffmpeg" "$TARGET_BIN_DIR/ffprobe"
             xattr -dr com.apple.quarantine "$TARGET_BIN_DIR/ffmpeg" "$TARGET_BIN_DIR/ffprobe" 2>/dev/null || true
-            log_success "정적 FFmpeg 바이너리 배치 완료 ($TARGET_BIN_DIR)"
+            if command -v ffmpeg &>/dev/null; then
+                INSTALLED_FFMPEG=1
+                log_success "Apple Silicon FFmpeg 네이티브 바이너리 설치 완료 ($TARGET_BIN_DIR)"
+            fi
         fi
         rm -rf "$TMP_FF"
     fi
 
+    # 2순위: Intel Mac 또는 다운로드 실패 시 Homebrew 백업
+    if [ "$INSTALLED_FFMPEG" -eq 0 ]; then
+        log_info "Homebrew를 통해 FFmpeg 패키지를 설치합니다..."
+        NONINTERACTIVE=1 brew install ffmpeg || true
+    fi
+
     if command -v ffmpeg &>/dev/null; then
-        log_success "FFmpeg 설치 완료 ($(ffmpeg -version | head -n1 | cut -d' ' -f3))"
+        log_success "FFmpeg 준비 완료 ($(ffmpeg -version | head -n1 | cut -d' ' -f3))"
     else
         log_error "FFmpeg 설치에 실패했습니다."
         exit 1
