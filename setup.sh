@@ -214,35 +214,99 @@ else
     log_success "Node.js 확인: $(node -v) / npm $(npm -v)"
 fi
 
-# Python 3.10+ 버전 확인 및 설치
+# Python 3.10+ 버전 확인 및 초고속 설치 (컴파일 지연 원천 차단)
 PYTHON_BIN=""
-for cmd in python3.11 python3.12 python3.10 python3; do
-    if command -v "$cmd" &>/dev/null; then
-        if "$cmd" -c 'import sys; exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
-            PYTHON_BIN="$(command -v "$cmd")"
+for cmd in python3.11 python3.12 python3.10 python3 \
+           /opt/homebrew/bin/python3.11 /opt/homebrew/bin/python3 \
+           /usr/local/bin/python3.11 /usr/local/bin/python3 \
+           /Library/Frameworks/Python.framework/Versions/3.11/bin/python3.11; do
+    if command -v "$cmd" &>/dev/null || [ -x "$cmd" ]; then
+        CAND_BIN="$cmd"
+        command -v "$cmd" &>/dev/null && CAND_BIN="$(command -v "$cmd")"
+        if "$CAND_BIN" -c 'import sys; exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+            PYTHON_BIN="$CAND_BIN"
             break
         fi
     fi
 done
 
 if [ -z "$PYTHON_BIN" ]; then
-    log_warn "Python 3.10 이상 버전이 필요합니다. Homebrew로 python@3.11을 설치합니다..."
-    brew install python@3.11
-    if [ -x "/opt/homebrew/opt/python@3.11/bin/python3.11" ]; then
-        PYTHON_BIN="/opt/homebrew/opt/python@3.11/bin/python3.11"
-    elif [ -x "/usr/local/opt/python@3.11/bin/python3.11" ]; then
-        PYTHON_BIN="/usr/local/opt/python@3.11/bin/python3.11"
-    else
-        PYTHON_BIN="$(command -v python3.11 || command -v python3)"
+    log_info "Python 3.11 초고속 설치 중 (공식 완제품 macOS PKG, 컴파일 없음)..."
+    TMP_PY="/tmp/python_311_$$.pkg"
+    if curl -fsSL "https://www.python.org/ftp/python/3.11.9/python-3.11.9-macos11.pkg" -o "$TMP_PY"; then
+        sudo installer -pkg "$TMP_PY" -target / 2>/dev/null || installer -pkg "$TMP_PY" -target / 2>/dev/null || true
+        rm -f "$TMP_PY"
     fi
+
+    for cand in /Library/Frameworks/Python.framework/Versions/3.11/bin/python3.11 \
+                /usr/local/bin/python3.11 \
+                /opt/homebrew/bin/python3.11 \
+                python3.11 python3; do
+        if [ -x "$cand" ] || command -v "$cand" &>/dev/null; then
+            CAND_BIN="$cand"
+            command -v "$cand" &>/dev/null && CAND_BIN="$(command -v "$cand")"
+            if "$CAND_BIN" -c 'import sys; exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+                PYTHON_BIN="$CAND_BIN"
+                break
+            fi
+        fi
+    done
+fi
+
+if [ -z "$PYTHON_BIN" ]; then
+    log_warn "Homebrew를 통해 python@3.11을 시도합니다..."
+    NONINTERACTIVE=1 brew install python@3.11 || true
+    for cand in /opt/homebrew/opt/python@3.11/bin/python3.11 /usr/local/opt/python@3.11/bin/python3.11 python3.11 python3; do
+        if [ -x "$cand" ] || command -v "$cand" &>/dev/null; then
+            PYTHON_BIN="$cand"
+            break
+        fi
+    done
+fi
+
+if [ -z "$PYTHON_BIN" ]; then
+    log_error "Python 3.10 이상을 찾거나 설치할 수 없습니다. 수동으로 python.org에서 설치해 주세요."
+    exit 1
 fi
 log_success "Python 인터프리터 확인: $PYTHON_BIN ($("$PYTHON_BIN" --version))"
 
 # Ollama (로컬 LLM 인퍼런스 엔진)
 if ! command -v ollama &>/dev/null; then
-    log_info "Ollama 설치 중 (brew install ollama)..."
-    brew install ollama
-    log_success "Ollama 설치 완료"
+    log_info "Ollama 초고속 설치 중 (공식 바이너리/앱)..."
+    INSTALLED_OLLAMA=0
+    
+    # 1순위: 공식 완제품 App 다운로드 및 링크 생성 (컴파일 없는 5초 설치)
+    TMP_OL="/tmp/ollama_dl_$$"
+    mkdir -p "$TMP_OL"
+    if curl -fsSL "https://ollama.com/download/Ollama-darwin.zip" -o "$TMP_OL/ollama.zip"; then
+        unzip -q -o "$TMP_OL/ollama.zip" -d "$TMP_OL"
+        if [ -d "$TMP_OL/Ollama.app" ]; then
+            cp -rf "$TMP_OL/Ollama.app" /Applications/ 2>/dev/null || sudo cp -rf "$TMP_OL/Ollama.app" /Applications/
+            TARGET_BIN_DIR="/opt/homebrew/bin"
+            [ ! -d "$TARGET_BIN_DIR" ] && TARGET_BIN_DIR="/usr/local/bin"
+            [ ! -d "$TARGET_BIN_DIR" ] && TARGET_BIN_DIR="$HOME/.local/bin"
+            mkdir -p "$TARGET_BIN_DIR"
+            if [ -x "/Applications/Ollama.app/Contents/Resources/ollama" ]; then
+                ln -sf /Applications/Ollama.app/Contents/Resources/ollama "$TARGET_BIN_DIR/ollama" 2>/dev/null || sudo ln -sf /Applications/Ollama.app/Contents/Resources/ollama "$TARGET_BIN_DIR/ollama"
+            fi
+            if command -v ollama &>/dev/null; then
+                INSTALLED_OLLAMA=1
+                log_success "Ollama 공식 완제품 앱 및 CLI 설치 완료"
+            fi
+        fi
+    fi
+    rm -rf "$TMP_OL"
+
+    # 2순위: Cask 또는 brew 백업
+    if [ "$INSTALLED_OLLAMA" -eq 0 ]; then
+        brew install --cask ollama-app 2>/dev/null || brew install ollama 2>/dev/null || true
+    fi
+
+    if command -v ollama &>/dev/null; then
+        log_success "Ollama 확인: $(ollama --version 2>/dev/null || echo 'installed')"
+    else
+        log_warn "Ollama 자동 설치 실패. 필요한 경우 https://ollama.com 에서 설치해 주세요."
+    fi
 else
     log_success "Ollama 확인: $(ollama --version 2>/dev/null || echo 'installed')"
 fi
