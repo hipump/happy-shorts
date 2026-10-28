@@ -127,31 +127,11 @@ fi
 # FFmpeg (영상/오디오 처리 핵심 엔진)
 if ! command -v ffmpeg &>/dev/null; then
     log_info "FFmpeg 설치 중 (brew install ffmpeg)..."
-    if ! brew install ffmpeg; then
-        log_warn "Homebrew 소스 빌드 실패. 사전 빌드 패키지(brew install --cask ffmpeg)로 재시도합니다..."
-        if ! brew install --cask ffmpeg; then
-            log_warn "macOS 정적 바이너리(Static Binary) 직접 다운로드를 시도합니다..."
-            TMP_DIR="/tmp/ffmpeg_install_$$"
-            mkdir -p "$TMP_DIR"
-            curl -fsSL "https://evermeet.cx/ffmpeg/getrelease/zip" -o "$TMP_DIR/ffmpeg.zip" || true
-            if [ -f "$TMP_DIR/ffmpeg.zip" ]; then
-                unzip -q -o "$TMP_DIR/ffmpeg.zip" -d "$TMP_DIR"
-                if [ -d "/opt/homebrew/bin" ]; then
-                    mv "$TMP_DIR/ffmpeg" /opt/homebrew/bin/
-                    chmod +x /opt/homebrew/bin/ffmpeg
-                else
-                    sudo mv "$TMP_DIR/ffmpeg" /usr/local/bin/ || mv "$TMP_DIR/ffmpeg" "$HOME/.local/bin/"
-                    chmod +x /usr/local/bin/ffmpeg 2>/dev/null || true
-                fi
-            fi
-            rm -rf "$TMP_DIR"
-        fi
-    fi
-
+    NONINTERACTIVE=1 brew install ffmpeg
     if command -v ffmpeg &>/dev/null; then
         log_success "FFmpeg 설치 완료 ($(ffmpeg -version | head -n1 | cut -d' ' -f3))"
     else
-        log_error "FFmpeg 설치에 실패했습니다. 터미널에서 'brew install --cask ffmpeg'를 직접 실행해 주세요."
+        log_error "FFmpeg 설치에 실패했습니다. 터미널에서 'brew install ffmpeg'를 직접 실행해 주세요."
         exit 1
     fi
 else
