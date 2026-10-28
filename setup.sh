@@ -168,9 +168,48 @@ fi
 
 # Node.js & npm (Next.js 웹 UI 구동)
 if ! command -v node &>/dev/null || ! command -v npm &>/dev/null; then
-    log_info "Node.js 설치 중 (brew install node)..."
-    brew install node
-    log_success "Node.js 설치 완료 ($(node -v))"
+    log_info "Node.js 초고속 설치 중 (공식 네이티브 완제품 바이너리)..."
+    INSTALLED_NODE=0
+
+    # 1순위: Apple Silicon(M시리즈) 공식 완제품 바이너리 (의존성 컴파일 없는 3초 설치)
+    if [ "$ARCH" = "arm64" ]; then
+        TMP_NODE="/tmp/node_dl_$$"
+        mkdir -p "$TMP_NODE"
+        if curl -fsSL "https://nodejs.org/dist/v22.11.0/node-v22.11.0-darwin-arm64.tar.gz" -o "$TMP_NODE/node.tar.gz"; then
+            mkdir -p "$TMP_NODE/pkg"
+            tar -xzf "$TMP_NODE/node.tar.gz" -C "$TMP_NODE/pkg" --strip-components=1
+            TARGET_BIN_DIR="/opt/homebrew/bin"
+            [ ! -d "$TARGET_BIN_DIR" ] && TARGET_BIN_DIR="/usr/local/bin"
+            [ ! -d "$TARGET_BIN_DIR" ] && TARGET_BIN_DIR="$HOME/.local/bin"
+            mkdir -p "$TARGET_BIN_DIR"
+            cp -rf "$TMP_NODE/pkg/bin/"* "$TARGET_BIN_DIR/" 2>/dev/null || sudo cp -rf "$TMP_NODE/pkg/bin/"* "$TARGET_BIN_DIR/"
+            if [ -d "$TMP_NODE/pkg/lib" ]; then
+                TARGET_LIB_DIR="/opt/homebrew/lib"
+                [ ! -d "$TARGET_LIB_DIR" ] && TARGET_LIB_DIR="/usr/local/lib"
+                [ ! -d "$TARGET_LIB_DIR" ] && TARGET_LIB_DIR="$HOME/.local/lib"
+                mkdir -p "$TARGET_LIB_DIR"
+                cp -rf "$TMP_NODE/pkg/lib/"* "$TARGET_LIB_DIR/" 2>/dev/null || sudo cp -rf "$TMP_NODE/pkg/lib/"* "$TARGET_LIB_DIR/"
+            fi
+            if command -v node &>/dev/null; then
+                INSTALLED_NODE=1
+                log_success "Node.js 공식 네이티브 바이너리 설치 완료 ($(node -v) / npm $(npm -v))"
+            fi
+        fi
+        rm -rf "$TMP_NODE"
+    fi
+
+    # 2순위: Intel Mac 또는 다운로드 실패 시 Homebrew 백업
+    if [ "$INSTALLED_NODE" -eq 0 ]; then
+        log_info "Homebrew를 통해 Node.js 패키지를 설치합니다..."
+        NONINTERACTIVE=1 brew install node || true
+    fi
+
+    if command -v node &>/dev/null; then
+        log_success "Node.js 준비 완료 ($(node -v) / npm $(npm -v))"
+    else
+        log_error "Node.js 설치에 실패했습니다."
+        exit 1
+    fi
 else
     log_success "Node.js 확인: $(node -v) / npm $(npm -v)"
 fi
