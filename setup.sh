@@ -234,7 +234,8 @@ if [ -z "$PYTHON_BIN" ]; then
     log_info "Python 3.11 초고속 설치 중 (공식 완제품 macOS PKG, 컴파일 없음)..."
     TMP_PY="/tmp/python_311_$$.pkg"
     if curl -fsSL "https://www.python.org/ftp/python/3.11.9/python-3.11.9-macos11.pkg" -o "$TMP_PY"; then
-        sudo installer -pkg "$TMP_PY" -target / 2>/dev/null || installer -pkg "$TMP_PY" -target / 2>/dev/null || true
+        echo "macOS 관리자 암호를 입력하시면 공식 Python 3.11이 수초 내에 자동 설치됩니다:"
+        sudo installer -pkg "$TMP_PY" -target / || true
         rm -f "$TMP_PY"
     fi
 
@@ -285,10 +286,13 @@ if ! command -v ollama &>/dev/null; then
             TARGET_BIN_DIR="/opt/homebrew/bin"
             [ ! -d "$TARGET_BIN_DIR" ] && TARGET_BIN_DIR="/usr/local/bin"
             [ ! -d "$TARGET_BIN_DIR" ] && TARGET_BIN_DIR="$HOME/.local/bin"
-            mkdir -p "$TARGET_BIN_DIR"
+            mkdir -p "$TARGET_BIN_DIR" 2>/dev/null || sudo mkdir -p "$TARGET_BIN_DIR"
             if [ -x "/Applications/Ollama.app/Contents/Resources/ollama" ]; then
                 ln -sf /Applications/Ollama.app/Contents/Resources/ollama "$TARGET_BIN_DIR/ollama" 2>/dev/null || sudo ln -sf /Applications/Ollama.app/Contents/Resources/ollama "$TARGET_BIN_DIR/ollama"
             fi
+            mkdir -p "$HOME/.local/bin"
+            ln -sf /Applications/Ollama.app/Contents/Resources/ollama "$HOME/.local/bin/ollama" 2>/dev/null || true
+            export PATH="$HOME/.local/bin:$TARGET_BIN_DIR:$PATH"
             if command -v ollama &>/dev/null; then
                 INSTALLED_OLLAMA=1
                 log_success "Ollama 공식 완제품 앱 및 CLI 설치 완료"
