@@ -355,7 +355,7 @@ def draw_grunge_slash_banner(
 
     return banner.filter(ImageFilter.GaussianBlur(1.2))
 
-def detect_content_mood(title: str, hook_text: str = "") -> Dict:
+def detect_content_mood(title: str, hook_text: str = "", clip_idx: int = 1) -> Dict:
     """
     Analyzes video title and hook semantics to dynamically select the best typography preset:
     - spooky_ghost: horror, ghost, mystery, abandoned
@@ -366,6 +366,9 @@ def detect_content_mood(title: str, hook_text: str = "") -> Dict:
     - washi_vlog: vlog, travel, healing, jeju, alone, quiet
     - variety_show: talk, confession, comedy, funny, secret, dating
     - blockbuster_3d: default high-CTR shock, viral, warning
+    
+    If no explicit niche keywords match, dynamically rotates across 6 distinctive visual themes
+    based on clip_idx so that multiple clips generated from one video look exciting and varied.
     """
     text = f"{title} {hook_text}".lower()
 
@@ -381,8 +384,8 @@ def detect_content_mood(title: str, hook_text: str = "") -> Dict:
     if any(k in text for k in ["주식", "코인", "비트코인", "이더리움", "10억", "재테크", "부자", "월급", "수익", "투자", "명품", "연봉", "슈퍼카", "매출", "상승", "폭등"]):
         return TYPOGRAPHY_PRESETS["gold_luxury"]
 
-    # 4. Tech / AI / Cyber / Gadgets
-    if any(k in text for k in ["스마트폰", "ai", "테슬라", "애플", "전기차", "로봇", "반도체", "미래", "과학", "팁", "꿀팁", "알고리즘", "세팅", "기능", "업데이트", "아이폰", "갤럭시", "컴퓨터", "비전프로", "chatgpt", "출시", "개발", "코딩"]):
+    # 4. Pure Tech / AI / Cyber / Autonomous Driving (Avoid generic '팁' or '꿀팁')
+    if any(k in text for k in ["ai", "로봇", "반도체", "인공지능", "fsl", "오토파일럿", "자율주행", "챗gpt", "chatgpt", "코딩", "소프트웨어", "비전프로", "메타버스"]):
         return TYPOGRAPHY_PRESETS["cyber_neon"]
 
     # 5. Food / Mukbang / Cafe / Dessert
@@ -394,11 +397,21 @@ def detect_content_mood(title: str, hook_text: str = "") -> Dict:
         return TYPOGRAPHY_PRESETS["washi_vlog"]
 
     # 7. Variety Show / Talk / Comedy / Dating
-    if any(k in text for k in ["썰", "고백", "비밀", "코미디", "폭소", "개그", "웃긴", "친구", "연애", "환승", "남친", "여친", "인터뷰", "충격 고백"]):
+    if any(k in text for k in ["썰", "고백", "비밀", "코미디", "폭소", "개그", "웃긴", "친구", "연애", "환승", "남친", "여친", "인터뷰", "충격 고백", "현타"]):
         return TYPOGRAPHY_PRESETS["variety_show"]
 
-    # 8. Default High-CTR Viral Blockbuster
-    return TYPOGRAPHY_PRESETS["blockbuster_3d"]
+    # 8. Dynamic Diverse Rotation Suite (High-CTR 6 Distinct Visual Styles)
+    # Consecutive clips alternate through 3D Red -> Cyber Cyan -> Gold Luxury -> Variety Show -> Ink Splatter -> Jelly Pop!
+    DIVERSE_ROTATION = [
+        "blockbuster_3d",  # 1: 3D 돌출 레드 & 골드
+        "cyber_neon",      # 2: 사이버 네온 시안 & 블루 레이저
+        "gold_luxury",     # 3: 24K 골드 럭셔리 & 엠버
+        "variety_show",    # 4: TV 예능 자막 옐로우 & 바이올렛
+        "ink_splatter",    # 5: 거친 잉크 스플래터 크림슨 & 블랙
+        "jelly_pop",       # 6: 젤리 버블 팝 핑크 & 옐로우
+    ]
+    rot_id = DIVERSE_ROTATION[(max(1, clip_idx) - 1) % len(DIVERSE_ROTATION)]
+    return TYPOGRAPHY_PRESETS.get(rot_id, TYPOGRAPHY_PRESETS["blockbuster_3d"])
 
 def draw_preset_banner(
     w: int,
@@ -967,6 +980,7 @@ def generate_creator_thumbnail(
     virality_score: Optional[int] = None,
     ai_bg_path: Optional[str] = None,
     style_preset: Optional[str] = None,
+    clip_idx: int = 1,
     **kwargs,
 ) -> str:
     """
@@ -989,7 +1003,7 @@ def generate_creator_thumbnail(
     else:  # Default 9:16 Shorts
         target_w, target_h = 1080, 1920
 
-    # 2. Extract best video frame
+    # 2. Extract best video frame with Smart Sharpness & Face Quality Filter
     target_video = source_video_path if (source_video_path and Path(source_video_path).exists()) else video_path
     is_source = (target_video == source_video_path)
     base_time = (start_time or 0.0) if is_source else 0.0
@@ -1014,10 +1028,21 @@ def generate_creator_thumbnail(
             best_frame = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             best_cutout = extract_subject_cutout(best_frame)
     else:
-        # Automated pipeline mode: inspect multiple candidate timestamps across the clip
-        # to guarantee the hero presenter face with the largest, clearest cutout is selected
-        offsets = [0.20, 0.40, 0.65, 0.80, 0.10]
-        max_cutout_area = 0
+        # Automated pipeline mode: inspect 11 candidate timestamps across the clip
+        # Rejects blurry transitions, black fades, and picks the sharpest presenter/subject frame
+        offsets = [0.25, 0.40, 0.55, 0.70, 0.15, 0.30, 0.50, 0.65, 0.80, 0.10, 0.85]
+        best_score = -9999.0
+
+        face_cascade = None
+        cascade_p = Path("assets/models/haarcascade_frontalface_default.xml")
+        if cascade_p.exists():
+            try:
+                face_cascade = cv2.CascadeClassifier(str(cascade_p))
+            except Exception:
+                face_cascade = None
+
+        fallback_frame = None
+
         for ratio in offsets:
             s_time = base_time + (clip_dur * ratio)
             if video_dur > 0:
@@ -1026,18 +1051,56 @@ def generate_creator_thumbnail(
             ret, frame = cap.read()
             if not ret or frame is None:
                 continue
-            pil_f = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-            cutout = extract_subject_cutout(pil_f)
+
+            pil_candidate = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            if fallback_frame is None:
+                fallback_frame = pil_candidate
+
+            # Quality Check 1: Reject black fade-outs (< 32) or blinding white frames (> 245)
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            mean_bright = float(np.mean(gray))
+            if mean_bright < 32.0 or mean_bright > 245.0:
+                continue
+
+            # Quality Check 2: Sharpness via Laplacian variance (rejects motion blur and cross-dissolves)
+            lap_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+            if lap_var < 45.0:
+                continue
+
+            frame_score = min(250.0, lap_var) * 0.4  # up to 100 base points from clarity
+
+            # Quality Check 3: Face detection & center composition bonus
+            has_clear_face = False
+            if face_cascade is not None:
+                faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(60, 60))
+                if len(faces) > 0:
+                    fx, fy, fw, fh = max(faces, key=lambda f: f[2] * f[3])
+                    frame_score += 350.0  # Massive priority bonus for human facial expression
+                    has_clear_face = True
+                    # Optical center alignment bonus
+                    face_cx = fx + fw / 2.0
+                    frame_w = frame.shape[1]
+                    dist_from_center = abs(face_cx - frame_w / 2.0) / (frame_w / 2.0)
+                    frame_score += max(0.0, 100.0 * (1.0 - dist_from_center))
+
+            # Quality Check 4: Subject cutout area via rembg
+            cutout = extract_subject_cutout(pil_candidate)
             if cutout is not None:
                 area = cutout.width * cutout.height
-                if area > max_cutout_area:
-                    max_cutout_area = area
-                    best_frame = pil_f
-                    best_cutout = cutout
-                    if area > (target_w * target_h * 0.18):  # Great hero shot found
-                        break
-            if best_frame is None:
-                best_frame = pil_f
+                if area > (target_w * target_h * 0.08):
+                    frame_score += min(300.0, (area / (target_w * target_h)) * 600.0)
+
+            if frame_score > best_score:
+                best_score = frame_score
+                best_frame = pil_candidate
+                best_cutout = cutout
+                # If we captured an exceptionally sharp, centered human face with cutout, lock in
+                if best_score > 650.0 and has_clear_face:
+                    break
+
+        if best_frame is None:
+            best_frame = fallback_frame
+
     cap.release()
 
     if best_frame is None:
@@ -1059,11 +1122,11 @@ def generate_creator_thumbnail(
     else:
         canvas = create_cinematic_bg(raw_frame_rgb, target_w, target_h)
 
-    # 4. Resolve Typography Preset (Explicit user selection or AI content analysis)
+    # 4. Resolve Typography Preset (Explicit user selection or AI content analysis with dynamic rotation)
     if style_preset and style_preset in TYPOGRAPHY_PRESETS:
         preset = TYPOGRAPHY_PRESETS[style_preset]
     else:
-        preset = detect_content_mood(title, hook_text)
+        preset = detect_content_mood(title, hook_text, clip_idx=clip_idx)
 
     # Subtle mood wash
     banner_color = preset.get("banner_color", (195, 12, 25))

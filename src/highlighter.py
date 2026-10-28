@@ -437,8 +437,32 @@ def fallback_heuristic_highlights(
                 break
         if not overlap:
             idx = len(results) + 1
-            clip_title = f"핵심 꿀팁 하이라이트 #{idx}"
-            pts = summarize_clip_content(transcript, s_start, s_end, clip_title)
+            # 1. First summarize the actual content
+            pts = summarize_clip_content(transcript, s_start, s_end, "")
+
+            # 2. Derive concrete topic title from summary point or spoken dialogue
+            topic_candidate = ""
+            if pts and len(pts) > 0 and pts[0] and "가이드" not in pts[0]:
+                first_pt = pts[0].split("-")[-1].strip()
+                first_pt = re.sub(r'[\'\"\[\]\(\)]', '', first_pt)
+                if len(first_pt) >= 4:
+                    topic_candidate = first_pt[:22]
+
+            if not topic_candidate:
+                clip_segs = [s.text.strip() for s in transcript.segments if s_start <= s.end and s.start <= s_end and s.text.strip()]
+                all_text = " ".join(clip_segs)
+                stopwords = {"이거", "그거", "저거", "이제", "여기", "진짜", "너무", "이런", "그런", "저런", "제가", "그냥", "하면", "보고", "해서", "하는", "오늘", "지금"}
+                words = [w for w in re.findall(r'[가-힣a-zA-Z0-9]{2,}', all_text) if w not in stopwords]
+                if len(words) >= 2:
+                    topic_candidate = f"{words[0]} {words[1]} 핵심 가이드"
+                elif len(words) == 1:
+                    topic_candidate = f"{words[0]} 핵심 가이드"
+                else:
+                    topic_candidate = f"핵심 꿀팁 가이드 #{idx}"
+
+            clip_title = topic_candidate
+            hook_text = f"모르면 손해보는 {topic_candidate}"
+
             # Calculate heuristic virality score (75 ~ 95)
             dur = max(1.0, s_end - s_start)
             wpm = (words_in_window / dur) * 60.0
@@ -450,12 +474,12 @@ def fallback_heuristic_highlights(
                 "value": 24 if len(pts) >= 2 else 18,
                 "trend": min(20, max(12, virality_score - 70))
             }
-            hook_var = generate_hook_variants(clip_title, f"놓치면 손해보는 핵심 팁 #{idx}")
+            hook_var = generate_hook_variants(clip_title, hook_text)
             stat_p = extract_stat_pill_from_transcript(transcript, s_start, s_end)
             results.append(Highlight(
                 id=idx,
                 title=clip_title,
-                hook_text=f"놓치면 손해보는 핵심 팁 #{idx}",
+                hook_text=hook_text,
                 hook_variants=hook_var,
                 start_time=s_start,
                 end_time=s_end,

@@ -831,6 +831,7 @@ async def run_render_task(job_id: str, req: RenderRequest):
                         start_time=h.start_time,
                         duration=h.duration,
                         style_preset=p_set,
+                        clip_idx=h.id,
                     )
                 )
             except Exception as e:

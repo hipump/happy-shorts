@@ -406,6 +406,7 @@ class ShortsPipeline:
                     start_time=h.start_time,
                     duration=h.duration,
                     virality_score=h.virality_score,
+                    clip_idx=h.id,
                 )
                 console.print(f"  [bold green]✔ 크리에이터 썸네일 완성:[/bold green] {cover_path}")
             except Exception as e:
